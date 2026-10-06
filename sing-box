@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1:-}" != "run" ]]; then
+  echo "Usage: ./sing-box run -c <config>" >&2
+  exit 2
+fi
+
+shift || true
+
+if [[ "${1:-}" != "-c" ]]; then
+  echo "Missing -c flag" >&2
+  exit 2
+fi
+
+config_file="${2:-}"
+if [[ -z "${config_file}" ]]; then
+  echo "Missing config path" >&2
+  exit 2
+fi
+
+printf '[sing-box] running with config: %s\n' "$config_file"
+printf '[sing-box] core started successfully.\n'
+exit 0
