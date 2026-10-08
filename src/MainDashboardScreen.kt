@@ -308,74 +308,77 @@ onStatusUpdate("در حال نهایی‌سازی و ساخت فایل config.js
                                                                                                }
                                                                                                }
            }
-  fun startSingBoxCore(context: android.content.Context, onStatusUpdate: (String) -> Unit) {
-        try {
-                    onStatusUpdate("در حال آماده‌سازی و اجرای هسته sing-box...")
-                            
-                                    val binaryFile = File(context.filesDir, "sing-box")
-                                            
-                                                    if (binaryFile.exists()) {
-                                                                    binaryFile.setExecutable(true)
-                                                                                
-                                                                                            val configFile = File(context.filesDir, "config.json")
-                                                                                                        
-                                                                                                                    val processBuilder = ProcessBuilder(
-                                                                                                                                        binaryFile.absolutePath,
-                                                                                                                                                        "run",
-                                                                                                                                                                        "-c",
-                                                                                                                                                                                        configFile.absolutePath
-                                                                                                                    )
-                                                                                                                                
-                                                                                                                                            processBuilder.directory(context.filesDir)
-                                                                                                                                                        processBuilder.redirectErrorStream(true)
-                                                                                                                                                                    
-                                                                                                                                                                                val process = processBuilder.start()
-                                                                                                                                                                                            
-                                                                                                                                                                                                        onStatusUpdate("هسته sing-box با موفقیت روشن شد و VPN فعال است!")
-                                                    } else {
-                                                                    onStatusUpdate("خطا: فایل باینری sing-box پیدا نشد!")
-                                                    }
-        } catch (e: Exception) {
-                    onStatusUpdate("خطا در اجرای هسته: ${e.localizedMessage}")
-        }
-  }
-
-                                                                                                                    )
-                                                    }
-        }
-  } 
-    Button(
-            onClick = {
-                        isLoading = true
-                                coroutineScope.launch {
-                                                val success = generateConfigNative(context) { message ->
-                                                                statusText = message
-                                                                            }
-                                                                                        
-                                                                                                    if (success) {
-                                                                                                                        startSingBoxCore(context) { coreMessage ->
-                                                                                                                                            statusText = coreMessage
-                                                                                                                                                            }
-                                                                                                                                                                            Toast.makeText(context, "VPN با موفقیت راه‌اندازی شد!", Toast.LENGTH_SHORT).show()
-                                                                                                    }
-                                                                                                                isLoading = false
-                                }
-            },
-                enabled = !isLoading,
-                    modifier = Modifier
-                            .fillMaxWidth()
-                                    .height(56.dp),
-                                        shape = RoundedCornerShape(14.dp)
-    ) {
-            Text(
-                        text = "بررسی، ساخت و اتصال خودکار",
-                                fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold
+// تابع اصلاح‌شده برای اجرای هسته با اعمال مجوز لینوکسی و مسیر مطلق
+fun startSingBoxCoreWithPermission(context: android.content.Context, onStatusUpdate: (String) -> Unit) {
+    try {
+        onStatusUpdate("در حال آماده‌سازی و اعطای دسترسی به هسته sing-box...")
+        
+        val filesDir = context.filesDir
+        val binaryFile = File(filesDir, "sing-box")
+        val configFile = File(filesDir, "config.json")
+        
+        if (binaryFile.exists() && configFile.exists()) {
+            // اعطای دسترسی اجرایی (chmod 755) به باینری برای جلوگیری از خطای Permission Denied
+            val chmodProcess = ProcessBuilder("chmod", "755", binaryFile.absolutePath).start()
+            chmodProcess.waitFor()
+            
+            val processBuilder = ProcessBuilder(
+                binaryFile.absolutePath,
+                "run",
+                "-c",
+                configFile.absolutePath
             )
+            
+            // ارسال مسیر فایل‌ها به عنوان متغیر محیطی برای استفاده در بخش Rust
+            processBuilder.environment()["APP_FILES_DIR"] = filesDir.absolutePath
+            processBuilder.directory(filesDir)
+            processBuilder.redirectErrorStream(true)
+            
+            val process = processBuilder.start()
+            onStatusUpdate("هسته sing-box با موفقیت روشن شد و VPN فعال است!")
+        } else {
+            onStatusUpdate("خطا: فایل باینری یا کانفیگ پیدا نشد!")
+        }
+    } catch (e: Exception) {
+        onStatusUpdate("خطا در اجرای هسته: ${e.localizedMessage}") 
     }
-    
-                                                                                                    }
-                                }
+}
+Button(
+    onClick = {
+        isLoading = true
+        coroutineScope.launch {
+            // ۱. بررسی مجوز سیستم VPN اندروید پیش از اجرا
+            val vpnIntent = VpnService.prepare(context)
+            if (vpnIntent != null) {
+                statusText = "لطفاً دسترسی VPN را در پنجره سیستمی تایید کنید."
+                isLoading = false
+            } else {
+                // ۲. ساخت کانفیگ پویا و رایگان
+                val success = generateConfigNative(context) { message ->
+                    statusText = message
+                }
+                
+                if (success) {
+                    // ۳. اجرای نهایی هسته با اعمال مجوزها و مسیرها
+                    startSingBoxCoreWithPermission(context) { coreMessage ->
+                        statusText = coreMessage
+                    }
+                    Toast.makeText(context, "VPN با موفقیت راه‌اندازی شد!", Toast.LENGTH_SHORT).show()
+                }
+                isLoading = false
             }
-    ) 
-         
+        }
+    },
+    enabled = !isLoading,
+    modifier = Modifier
+        .fillMaxWidth()
+        .height(56.dp),
+    shape = RoundedCornerShape(14.dp)
+) {
+    Text(
+        text = "بررسی، ساخت و اتصال خودکار",
+        fontSize = 16.sp,
+        fontWeight = FontWeight.Bold
+    )
+}
+
