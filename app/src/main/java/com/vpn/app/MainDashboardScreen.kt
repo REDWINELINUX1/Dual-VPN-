@@ -1,4 +1,4 @@
-Package com.loin.project.vpnmanager
+package com.vpn.app
 
 import android.content.Intent
 import android.util.Base64
