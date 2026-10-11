@@ -9,7 +9,7 @@ on:
       - "build.gradle.kts"
       - "settings.gradle.kts"
       - "gradle.properties"
-      - ".github/workflows/build-apk.yml"
+      - ".github/workflows/**"
 
 jobs:
   build:
