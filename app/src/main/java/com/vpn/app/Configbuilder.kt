@@ -428,6 +428,27 @@ suspend fun buildConfig(
             for (i in 0 until nodes.length()) {
                 outbounds.put(nodes.getJSONObject(i))
             }
+            // اصلاح ساختار برای sing-box جدید: rule_set داخل route می‌رود و قانون‌ها اکشن می‌گیرند
+            config.remove("rule_set")
+            val fixedRules = JSONArray()
+            fixedRules.put(JSONObject().put("action", "sniff"))
+            fixedRules.put(
+                JSONObject()
+                    .put("ip_is_private", true)
+                    .put("action", "route")
+                    .put("outbound", "direct")
+            )
+            fixedRules.put(
+                JSONObject()
+                    .put("domain_suffix", JSONArray().put(".ir"))
+                    .put("action", "route")
+                    .put("outbound", "direct")
+            )
+            val fixedRoute = JSONObject()
+            fixedRoute.put("rules", fixedRules)
+            fixedRoute.put("final", "select")
+            fixedRoute.put("auto_detect_interface", true)
+            config.put("route", fixedRoute)
             config.put("outbounds", outbounds)
 
             val rules = JSONArray()
@@ -445,7 +466,7 @@ suspend fun buildConfig(
             route.put("rules", rules)
             route.put("final", "select")
             route.put("auto_detect_interface", true)
-            config.put("route", route)
+           // config.put("route", route)
 
             val text = config.toString(4)
             File(context.filesDir, "config.json").writeText(text)
