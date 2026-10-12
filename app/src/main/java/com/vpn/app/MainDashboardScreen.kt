@@ -1,5 +1,8 @@
 package com.vpn.app
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -11,7 +14,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+// آیا الان یک VPN (هر برنامه‌ای) فعال است؟
+private fun isVpnActive(context: Context): Boolean {
+    val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+    return caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+}
 
 @Composable
 fun MainDashboardScreen() {
@@ -19,6 +30,28 @@ fun MainDashboardScreen() {
     val coroutineScope = rememberCoroutineScope()
     var statusText by remember { mutableStateOf("آماده به کار - مستقل و بومی") }
     var isLoading by remember { mutableStateOf(false) }
+    var waitingForVpn by remember { mutableStateOf(false) }
+
+    // بعد از باز کردن ویندسکرایب، هر ۱.۵ ثانیه چک می‌کند VPN وصل شده یا نه (حداکثر ۳ دقیقه)
+    LaunchedEffect(waitingForVpn) {
+        if (waitingForVpn) {
+            var connected = false
+            var tries = 0
+            while (!connected && tries < 120) {
+                connected = isVpnActive(context)
+                if (!connected) {
+                    delay(1500)
+                    tries++
+                }
+            }
+            statusText = if (connected) {
+                "اتصال VPN برقرار شد"
+            } else {
+                "اتصال VPN تشخیص داده نشد"
+            }
+            waitingForVpn = false
+        }
+    }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -63,7 +96,7 @@ fun MainDashboardScreen() {
                         fontWeight = FontWeight.Medium
                     )
 
-                    if (isLoading) {
+                    if (isLoading || waitingForVpn) {
                         Spacer(modifier = Modifier.height(12.dp))
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     }
@@ -111,7 +144,8 @@ fun MainDashboardScreen() {
                         val intent = context.packageManager.getLaunchIntentForPackage(packageName)
                         if (intent != null) {
                             context.startActivity(intent)
-                            statusText = "منتظر برقراری اتصال پرمیوم (پورت ۱۰۸۰)..."
+                            statusText = "منتظر برقراری اتصال VPN..."
+                            waitingForVpn = true
                         } else {
                             Toast.makeText(
                                 context,
