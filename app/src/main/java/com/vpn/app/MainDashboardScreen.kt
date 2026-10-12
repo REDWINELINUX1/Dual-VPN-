@@ -1,6 +1,5 @@
 package com.vpn.app
 
-import android.util.Base64
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -12,19 +11,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.File
-import java.io.InputStreamReader
-import java.net.HttpURLConnection
-import java.net.InetSocketAddress
-import java.net.Socket
-import java.net.URL
 
 @Composable
 fun MainDashboardScreen() {
@@ -89,7 +76,7 @@ fun MainDashboardScreen() {
                 onClick = {
                     isLoading = true
                     coroutineScope.launch {
-                        val success = generateConfigNative(context) { message ->
+                        val success = buildConfig(context) { message ->
                             statusText = message
                         }
                         isLoading = false
@@ -151,173 +138,6 @@ fun MainDashboardScreen() {
                     fontWeight = FontWeight.Bold
                 )
             }
-        }
-    }
-}
-
-private fun isPortOpen(host: String, port: Int): Boolean {
-    return try {
-        Socket().use { socket ->
-            socket.connect(InetSocketAddress(host, port), 2000)
-        }
-        true
-    } catch (e: Exception) {
-        false
-    }
-}
-
-private fun addNode(nodes: JSONArray, tag: String, type: String, port: Int) {
-    val node = JSONObject()
-    node.put("tag", tag)
-    node.put("type", type)
-    node.put("server", "extracted_host_or_ip")
-    node.put("server_port", port)
-    nodes.put(node)
-}
-
-suspend fun generateConfigNative(
-    context: android.content.Context,
-    onStatusUpdate: (String) -> Unit
-): Boolean {
-    return withContext(Dispatchers.IO) {
-        try {
-            onStatusUpdate("در حال دریافت کانفیگ‌ها از منبع...")
-            val urlString = "https://raw.githubusercontent.com/example/free-configs/main/nodes.txt"
-            val connection = URL(urlString).openConnection() as HttpURLConnection
-            connection.setRequestProperty("User-Agent", "Mozilla/5.0")
-            connection.connectTimeout = 10000
-            connection.readTimeout = 10000
-
-            val content = BufferedReader(InputStreamReader(connection.inputStream))
-                .use { it.readText() }
-
-            val lines = mutableListOf<String>()
-            try {
-                val decodedBytes = Base64.decode(content.trim(), Base64.DEFAULT)
-                val decoded = String(decodedBytes, Charsets.UTF_8)
-                lines.addAll(decoded.lineSequence().map { it.trim() }.filter { it.isNotEmpty() })
-            } catch (e: Exception) {
-                lines.addAll(content.lineSequence().map { it.trim() }.filter { it.isNotEmpty() })
-            }
-
-            val scoredNodes = JSONArray()
-            for ((index, line) in lines.withIndex()) {
-                when {
-                    line.startsWith("vless://") ->
-                        addNode(scoredNodes, "free-vless-$index", "vless", 443)
-                    line.startsWith("vmess://") ->
-                        addNode(scoredNodes, "free-vmess-$index", "vmess", 443)
-                    line.startsWith("trojan://") ->
-                        addNode(scoredNodes, "free-trojan-$index", "trojan", 443)
-                    line.startsWith("ss://") || line.startsWith("socks://") ->
-                        addNode(scoredNodes, "free-socks-$index", "socks", 1080)
-                }
-            }
-
-            if (scoredNodes.length() == 0) {
-                val fallback = JSONObject()
-                fallback.put("tag", "fallback-direct")
-                fallback.put("type", "direct")
-                scoredNodes.put(fallback)
-            }
-
-            onStatusUpdate("منتظر برقراری اتصال ویندسکرایب روی پورت ۱۰۸۰...")
-            var attempts = 0
-            while (!isPortOpen("127.0.0.1", 1080) && attempts < 15) {
-                delay(2000)
-                attempts++
-            }
-
-            onStatusUpdate("در حال نهایی‌سازی و ساخت فایل config.json...")
-
-            val config = JSONObject()
-            config.put(
-                "log",
-                JSONObject().put("disabled", false).put("level", "info").put("timestamp", true)
-            )
-
-            // منابع ریموت (Rule Sets) برای گیت‌هاب، تلگرام و ایران
-            val ruleSets = JSONArray().apply {
-                put(JSONObject().apply {
-                    put("tag", "github")
-                    put("type", "remote")
-                    put("format", "binary")
-                    put("url", "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-github.srs")
-                    put("download_detour", "select")
-                })
-                put(JSONObject().apply {
-                    put("tag", "telegram")
-                    put("type", "remote")
-                    put("format", "binary")
-                    put("url", "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-telegram.srs")
-                    put("download_detour", "select")
-                })
-                put(JSONObject().apply {
-                    put("tag", "ir")
-                    put("type", "remote")
-                    put("format", "binary")
-                    put("url", "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-ir.srs")
-                    put("download_detour", "direct")
-                })
-            }
-            config.put("rule_set", ruleSets)
-
-            val outbounds = JSONArray()
-            val selector = JSONObject().apply {
-                put("type", "selector")
-                put("tag", "select")
-                put(
-                    "outbounds",
-                    JSONArray()
-                        .put("premium-stable")
-                        .put(scoredNodes.getJSONObject(0).getString("tag"))
-                        .put("direct")
-                )
-            }
-            outbounds.put(selector)
-
-            val premiumNode = JSONObject().apply {
-                put("tag", "premium-stable")
-                put("type", "socks")
-                put("version", "5")
-                put("server", "127.0.0.1")
-                put("server_port", 1080)
-            }
-            outbounds.put(premiumNode)
-            outbounds.put(JSONObject().put("type", "direct").put("tag", "direct"))
-
-            for (i in 0 until scoredNodes.length()) {
-                outbounds.put(scoredNodes.getJSONObject(i))
-            }
-            config.put("outbounds", outbounds)
-
-            val rulesArray = JSONArray().apply {
-                put(JSONObject().put("ip_is_private", true).put("outbound", "direct"))
-                put(JSONObject().put("rule_set", JSONArray().put("telegram")).put("outbound", "select"))
-                put(JSONObject().put("rule_set", JSONArray().put("ir")).put("outbound", "direct"))
-                put(JSONObject().put("rule_set", JSONArray().put("github")).put("outbound", "select"))
-                put(
-                    JSONObject()
-                        .put("domain_suffix", JSONArray().put(".ir").put("irccli.ir"))
-                        .put("outbound", "direct")
-                )
-            }
-
-            val route = JSONObject().apply {
-                put("rules", rulesArray)
-                put("final", "select")
-                put("auto_detect_interface", true)
-            }
-            config.put("route", route)
-
-            val configFile = File(context.filesDir, "config.json")
-            configFile.writeText(config.toString(4))
-
-            onStatusUpdate("فایل config.json با موفقیت ساخته شد!")
-            true
-        } catch (e: Exception) {
-            onStatusUpdate("خطا: ${e.localizedMessage}")
-            false
         }
     }
 }
