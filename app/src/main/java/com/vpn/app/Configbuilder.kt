@@ -18,7 +18,6 @@ import java.net.Socket
 import java.net.URL
 import java.net.URLDecoder
 
-// کانال‌های عمومی تلگرام (بدون @)
 private val CHANNELS = listOf("BugFreeNet", "Eag1e_YT", "persianvpnhub", "ConfigWireguard")
 private const val MAX_NODES = 40
 private val LINK_REGEX = Regex("(vless|vmess|trojan|ss)://[^\\s<>\"']+")
@@ -139,8 +138,7 @@ private fun applyTlsAndTransport(
     if (p["headerType"] == "http") return false
 
     when (p["type"]) {
-        null, "", "tcp" -> {
-        }
+        null, "", "tcp" -> {}
         "ws" -> {
             val t = JSONObject()
             t.put("type", "ws")
@@ -277,17 +275,6 @@ private fun parseLink(link: String, tag: String): JSONObject? {
     }
 }
 
-private fun portIsOpen(host: String, port: Int): Boolean {
-    return try {
-        Socket().use { socket ->
-            socket.connect(InetSocketAddress(host, port), 1500)
-        }
-        true
-    } catch (e: Exception) {
-        false
-    }
-}
-
 private fun saveToDownloads(context: Context, name: String, text: String): Boolean {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
     return try {
@@ -364,47 +351,30 @@ suspend fun buildConfig(
                 return@withContext false
             }
 
-            val windscribeUp = portIsOpen("127.0.0.1", 1080)
-            report.appendLine(
-                if (windscribeUp) "ویندسکرایب روی پورت ۱۰۸۰ فعال است."
-                else "ویندسکرایب روی پورت ۱۰۸۰ فعال نیست."
-            )
-
             val config = JSONObject()
             config.put(
                 "log",
                 JSONObject().put("disabled", false).put("level", "info").put("timestamp", true)
             )
 
-            val ruleSets = JSONArray()
-            for (name in listOf("github", "telegram", "ir")) {
-                val rs = JSONObject()
-                rs.put("tag", name)
-                rs.put("type", "remote")
-                rs.put("format", "binary")
-                rs.put(
-                    "url",
-                    "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-$name.srs"
-                )
-                rs.put("download_detour", if (name == "ir") "direct" else "select")
-                ruleSets.put(rs)
-            }
-            config.put("rule_set", ruleSets)
-
             val outbounds = JSONArray()
 
+            // Selector اصلی برای مدیریت نودها و حالت خودکار (URLTest)
             val selectorList = JSONArray()
-            if (windscribeUp) selectorList.put("windscribe-outbound")
             selectorList.put("auto")
-            if (!windscribeUp) selectorList.put("windscribe-outbound")
             selectorList.put("direct")
+            for (i in 0 until nodeTags.length()) {
+                selectorList.put(nodeTags.getString(i))
+            }
+
             val selector = JSONObject()
             selector.put("type", "selector")
             selector.put("tag", "select")
             selector.put("outbounds", selectorList)
-            selector.put("default", if (windscribeUp) "windscribe-outbound" else "auto")
+            selector.put("default", "auto")
             outbounds.put(selector)
 
+            // تست پینگ خودکار برای انتخاب سریع‌ترین نود
             val auto = JSONObject()
             auto.put("type", "urltest")
             auto.put("tag", "auto")
@@ -413,20 +383,12 @@ suspend fun buildConfig(
             auto.put("interval", "5m")
             outbounds.put(auto)
 
-            val premium = JSONObject()
-            premium.put("type", "socks")
-            premium.put("tag", "windscribe-outbound")
-            premium.put("version", "5")
-            premium.put("server", "127.0.0.1")
-            premium.put("server_port", 1080)
-            outbounds.put(premium)
-
             outbounds.put(JSONObject().put("type", "direct").put("tag", "direct"))
 
             for (i in 0 until nodes.length()) {
                 outbounds.put(nodes.getJSONObject(i))
             }
-            config.remove("rule_set")
+
             val fixedRules = JSONArray()
             fixedRules.put(JSONObject().put("action", "sniff"))
             fixedRules.put(
@@ -451,10 +413,10 @@ suspend fun buildConfig(
             val text = config.toString(4)
             File(context.filesDir, "config.json").writeText(text)
 
-            val saved = saveToDownloads(context, "dual-vpn-config.json", text)
+            val saved = saveToDownloads(context, "standalone-vpn-config.json", text)
             report.appendLine("مجموع نودها: ${nodes.length()}")
             report.appendLine(
-                if (saved) "فایل dual-vpn-config.json در پوشه‌ی Downloads ذخیره شد."
+                if (saved) "فایل کانفیگ در پوشه‌ی Downloads ذخیره شد."
                 else "ذخیره در Downloads انجام نشد."
             )
             onStatusUpdate(report.toString())
