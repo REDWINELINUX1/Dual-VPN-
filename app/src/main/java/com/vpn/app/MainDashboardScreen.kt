@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-// Is any VPN (from any app) active right now?
+// بررسی فعال بودن VPN در سطح سیستم‌عامل
 private fun isVpnActive(context: Context): Boolean {
     val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
@@ -35,7 +35,7 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
     var waitingForVpn by remember { mutableStateOf(false) }
     val statusText = statusOverride ?: s.ready
 
-    // After opening Windscribe, check every 1.5 seconds whether a VPN is connected (up to 3 minutes)
+    // پایش وضعیت اتصال VPN هر 1.5 ثانیه پس از باز کردن ویندسکرایب
     LaunchedEffect(waitingForVpn) {
         if (waitingForVpn) {
             var connected = false
@@ -74,7 +74,7 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "VPN Manager Standalone",
+                    text = "Dual VPN Manager",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -119,7 +119,7 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
                         isLoading = true
                         coroutineScope.launch {
                             val success = buildConfig(context) { message ->
-                                statusOverride = message
+                                statusOverride = translateStatus(message)
                             }
                             isLoading = false
                             if (success) {
