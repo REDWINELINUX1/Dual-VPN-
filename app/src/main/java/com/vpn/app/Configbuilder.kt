@@ -101,7 +101,6 @@ private fun splitUri(link: String): Parts? {
     return Parts(user, hp.first, hp.second, queryMap(query))
 }
 
-// امنیت (TLS / reality) و نوع انتقال (ws / grpc / httpupgrade). اگر پشتیبانی نشود false برمی‌گرداند.
 private fun applyTlsAndTransport(
     o: JSONObject,
     p: Map<String, String>,
@@ -289,7 +288,6 @@ private fun portIsOpen(host: String, port: Int): Boolean {
     }
 }
 
-// نسخه‌ای از کانفیگ در پوشه‌ی Downloads تا بشود در اپ sing-box با «ورود از فایل» واردش کرد
 private fun saveToDownloads(context: Context, name: String, text: String): Boolean {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
     return try {
@@ -396,15 +394,15 @@ suspend fun buildConfig(
             val outbounds = JSONArray()
 
             val selectorList = JSONArray()
-            if (windscribeUp) selectorList.put("premium-stable")
+            if (windscribeUp) selectorList.put("windscribe-outbound")
             selectorList.put("auto")
-            if (!windscribeUp) selectorList.put("premium-stable")
+            if (!windscribeUp) selectorList.put("windscribe-outbound")
             selectorList.put("direct")
             val selector = JSONObject()
             selector.put("type", "selector")
             selector.put("tag", "select")
             selector.put("outbounds", selectorList)
-            selector.put("default", if (windscribeUp) "premium-stable" else "auto")
+            selector.put("default", if (windscribeUp) "windscribe-outbound" else "auto")
             outbounds.put(selector)
 
             val auto = JSONObject()
@@ -417,7 +415,7 @@ suspend fun buildConfig(
 
             val premium = JSONObject()
             premium.put("type", "socks")
-            premium.put("tag", "premium-stable")
+            premium.put("tag", "windscribe-outbound")
             premium.put("version", "5")
             premium.put("server", "127.0.0.1")
             premium.put("server_port", 1080)
@@ -428,7 +426,6 @@ suspend fun buildConfig(
             for (i in 0 until nodes.length()) {
                 outbounds.put(nodes.getJSONObject(i))
             }
-            // اصلاح ساختار برای sing-box جدید: rule_set داخل route می‌رود و قانون‌ها اکشن می‌گیرند
             config.remove("rule_set")
             val fixedRules = JSONArray()
             fixedRules.put(JSONObject().put("action", "sniff"))
@@ -450,23 +447,6 @@ suspend fun buildConfig(
             fixedRoute.put("auto_detect_interface", true)
             config.put("route", fixedRoute)
             config.put("outbounds", outbounds)
-
-            val rules = JSONArray()
-            rules.put(JSONObject().put("ip_is_private", true).put("outbound", "direct"))
-            rules.put(JSONObject().put("rule_set", JSONArray().put("telegram")).put("outbound", "select"))
-            rules.put(JSONObject().put("rule_set", JSONArray().put("ir")).put("outbound", "direct"))
-            rules.put(JSONObject().put("rule_set", JSONArray().put("github")).put("outbound", "select"))
-            rules.put(
-                JSONObject()
-                    .put("domain_suffix", JSONArray().put(".ir").put("irccli.ir"))
-                    .put("outbound", "direct")
-            )
-
-            val route = JSONObject()
-            route.put("rules", rules)
-            route.put("final", "select")
-            route.put("auto_detect_interface", true)
-           // config.put("route", route)
 
             val text = config.toString(4)
             File(context.filesDir, "config.json").writeText(text)
