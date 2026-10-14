@@ -1,26 +1,41 @@
 package com.vpn.app
 
-import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.setValue
+import android.content.Intent
+import android.net.VpnService
+import android.os.ParcelFileDescriptor
 
-class MainActivity : ComponentActivity() {
+class MyVpnService : VpnService() {
+    private var vpnInterface: ParcelFileDescriptor? = null
 
-    // با هر برگشت به برنامه یک واحد زیاد می‌شود تا وضعیت اجازه‌ی اعلان دوباره چک شود
-    private var resumeTick by mutableIntStateOf(0)
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        startVpnTunnel()
+        return START_STICKY
+    }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent {
-            AppRoot(resumeTick)
+    private fun startVpnTunnel() {
+        try {
+            val builder = Builder()
+                .setSession("Dual VPN")
+                .addAddress("10.0.0.2", 24)
+                .addRoute("0.0.0.0", 0)
+                .addDnsServer("8.8.8.8")
+            
+            vpnInterface = builder.establish()
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        resumeTick++
+    override!() { // Note: standard override function
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            vpnInterface?.close()
+            vpnInterface = null
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 }
