@@ -1,8 +1,6 @@
 package com.vpn.app
 
 import android.content.Context
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,15 +14,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-// بررسی فعال بودن VPN در سطح سیستم‌عامل
-private fun isVpnActive(context: Context): Boolean {
-    val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-    val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
-    return caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
-}
 
 @Composable
 fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
@@ -32,24 +22,57 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
     val coroutineScope = rememberCoroutineScope()
     var statusOverride by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
-    var waitingForVpn by remember { mutableStateOf(false) }
+    var showManualDialog by remember { mutableStateOf(false) }
+    var manualLink by remember { mutableStateOf("") }
     val statusText = statusOverride ?: s.ready
 
-    // پایش وضعیت اتصال VPN هر 1.5 ثانیه پس از باز کردن ویندسکرایب
-    LaunchedEffect(waitingForVpn) {
-        if (waitingForVpn) {
-            var connected = false
-            var tries = 0
-            while (!connected && tries < 120) {
-                connected = isVpnActive(context)
-                if (!connected) {
-                    delay(1500)
-                    tries++
+    // دیالوگ دریافت کانفیگ دستی از کاربر
+    if (showManualDialog) {
+        AlertDialog(
+            onDismissRequest = { showManualDialog = false },
+            title = { Text("Add Manual Config") },
+            text = {
+                Column {
+                    Text("Paste your VLESS, VMess, Trojan, or SS link below:", fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = manualLink,
+                        onValueChange = { manualLink = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("vless://...") },
+                        maxLines = 4
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (manualLink.isNotBlank()) {
+                            isLoading = true
+                            showManualDialog = false
+                            coroutineScope.launch {
+                                val success = addManualConfig(context, manualLink)
+                                isLoading = false
+                                if (success) {
+                                    Toast.makeText(context, "Manual config applied successfully!", Toast.LENGTH_SHORT).show()
+                                    statusOverride = "Manual Config Active"
+                                } else {
+                                    Toast.makeText(context, "Invalid link format!", Toast.LENGTH_SHORT).show()
+                                }
+                                manualLink = ""
+                            }
+                        }
+                    }
+                ) {
+                    Text("Save & Apply")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showManualDialog = false }) {
+                    Text("Cancel")
                 }
             }
-            statusOverride = if (connected) s.vpnConnected else s.vpnNotDetected
-            waitingForVpn = false
-        }
+        )
     }
 
     Surface(
@@ -105,15 +128,16 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
                             fontWeight = FontWeight.Medium
                         )
 
-                        if (isLoading || waitingForVpn) {
+                        if (isLoading) {
                             Spacer(modifier = Modifier.height(12.dp))
                             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
+                // دکمه دریافت خودکار کانفیگ‌ها از کانال‌ها
                 Button(
                     onClick = {
                         isLoading = true
@@ -130,46 +154,30 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
                     enabled = !isLoading,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp),
+                        .height(52.dp),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Text(
                         text = s.buildConfig,
-                        fontSize = 16.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
+                // دکمه افزودن کانفیگ دستی
                 OutlinedButton(
-                    onClick = {
-                        try {
-                            val packageName = "com.windscribe.vpn"
-                            val intent = context.packageManager.getLaunchIntentForPackage(packageName)
-                            if (intent != null) {
-                                context.startActivity(intent)
-                                statusOverride = s.waitingVpn
-                                waitingForVpn = true
-                            } else {
-                                Toast.makeText(context, s.windscribeMissing, Toast.LENGTH_SHORT).show()
-                            }
-                        } catch (e: Exception) {
-                            Toast.makeText(
-                                context,
-                                s.openError + ": " + e.message,
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    },
+                    onClick = { showManualDialog = true },
+                    enabled = !isLoading,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp),
+                        .height(52.dp),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Text(
-                        text = s.openWindscribe,
-                        fontSize = 16.sp,
+                        text = "Add Manual Config",
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
