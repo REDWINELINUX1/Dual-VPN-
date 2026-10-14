@@ -13,8 +13,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
-import java.net.InetSocketAddress
-import java.net.Socket
 import java.net.URL
 import java.net.URLDecoder
 
@@ -423,6 +421,62 @@ suspend fun buildConfig(
             true
         } catch (e: Exception) {
             onStatusUpdate("خطا: ${e.localizedMessage}")
+            false
+        }
+    }
+}
+
+suspend fun addManualConfig(context: Context, link: String): Boolean {
+    return withContext(Dispatchers.IO) {
+        try {
+            val node = parseLink(link.trim(), "manual_node") ?: return@withContext false
+            
+            val config = JSONObject()
+            config.put("log", JSONObject().put("disabled", false).put("level", "info").put("timestamp", true))
+            
+            val outbounds = JSONArray()
+            
+            val selectorList = JSONArray()
+            selectorList.put("manual_node")
+            selectorList.put("direct")
+            
+            val selector = JSONObject()
+            selector.put("type", "selector")
+            selector.put("tag", "select")
+            selector.put("outbounds", selectorList)
+            selector.put("default", "manual_node")
+            outbounds.put(selector)
+            
+            outbounds.put(JSONObject().put("type", "direct").put("tag", "direct"))
+            outbounds.put(node)
+            
+            val fixedRules = JSONArray()
+            fixedRules.put(JSONObject().put("action", "sniff"))
+            fixedRules.put(
+                JSONObject()
+                    .put("ip_is_private", true)
+                    .put("action", "route")
+                    .put("outbound", "direct")
+            )
+            fixedRules.put(
+                JSONObject()
+                    .put("domain_suffix", JSONArray().put(".ir"))
+                    .put("action", "route")
+                    .put("outbound", "direct")
+            )
+            val fixedRoute = JSONObject()
+            fixedRoute.put("rules", fixedRules)
+            fixedRoute.put("final", "select")
+            fixedRoute.put("auto_detect_interface", true)
+            
+            config.put("route", fixedRoute)
+            config.put("outbounds", outbounds)
+            
+            val text = config.toString(4)
+            File(context.filesDir, "config.json").writeText(text)
+            saveToDownloads(context, "manual-vpn-config.json", text)
+            true
+        } catch (e: Exception) {
             false
         }
     }
