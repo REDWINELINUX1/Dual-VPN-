@@ -331,8 +331,6 @@ suspend fun buildConfig(
                     if (nodes.length() >= MAX_NODES) break
                     val tag = "${channel}_n${nodes.length()}"
                     val node = parseLink(link, tag) ?: continue
-                    
-                    // ثبت نام کانال مبدأ به عنوان کامنت درون نود در فایل JSON
                     node.put("comment", "Sourced from Telegram Channel: @$channel")
 
                     val key = node.getString("type") + "|" + node.getString("server") + "|" +
@@ -411,13 +409,12 @@ suspend fun buildConfig(
             config.put("outbounds", outbounds)
 
             val text = config.toString(4)
-            // ذخیره در مسیر داخلی برای استفاده هسته VPN
             File(context.filesDir, "config.json").writeText(text)
 
             val saved = saveToDownloads(context, "standalone-vpn-config.json", text)
             report.appendLine("مجموع نودها: ${nodes.length()}")
             report.appendLine(
-                if (saved) "فایل کانفیگ ذخیره شد و آماده استفاده به عنوان VPN است."
+                if (saved) "فایل کانفیگ ذخیره شد."
                 else "ذخیره در Downloads انجام نشد."
             )
             onStatusUpdate(report.toString())
