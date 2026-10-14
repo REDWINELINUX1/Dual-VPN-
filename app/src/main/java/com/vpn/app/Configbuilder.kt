@@ -329,8 +329,12 @@ suspend fun buildConfig(
                 var added = 0
                 for (link in links) {
                     if (nodes.length() >= MAX_NODES) break
-                    val tag = "n${nodes.length()}"
+                    val tag = "${channel}_n${nodes.length()}"
                     val node = parseLink(link, tag) ?: continue
+                    
+                    // ثبت نام کانال مبدأ به عنوان کامنت درون نود در فایل JSON
+                    node.put("comment", "Sourced from Telegram Channel: @$channel")
+
                     val key = node.getString("type") + "|" + node.getString("server") + "|" +
                             node.getInt("server_port") + "|" +
                             node.optString("uuid") + node.optString("password")
@@ -357,7 +361,6 @@ suspend fun buildConfig(
 
             val outbounds = JSONArray()
 
-            // Selector اصلی برای مدیریت نودها و حالت خودکار (URLTest)
             val selectorList = JSONArray()
             selectorList.put("auto")
             selectorList.put("direct")
@@ -372,7 +375,6 @@ suspend fun buildConfig(
             selector.put("default", "auto")
             outbounds.put(selector)
 
-            // تست پینگ خودکار برای انتخاب سریع‌ترین نود
             val auto = JSONObject()
             auto.put("type", "urltest")
             auto.put("tag", "auto")
@@ -409,12 +411,13 @@ suspend fun buildConfig(
             config.put("outbounds", outbounds)
 
             val text = config.toString(4)
+            // ذخیره در مسیر داخلی برای استفاده هسته VPN
             File(context.filesDir, "config.json").writeText(text)
 
             val saved = saveToDownloads(context, "standalone-vpn-config.json", text)
             report.appendLine("مجموع نودها: ${nodes.length()}")
             report.appendLine(
-                if (saved) "فایل کانفیگ در پوشه‌ی Downloads ذخیره شد."
+                if (saved) "فایل کانفیگ ذخیره شد و آماده استفاده به عنوان VPN است."
                 else "ذخیره در Downloads انجام نشد."
             )
             onStatusUpdate(report.toString())
@@ -430,6 +433,7 @@ suspend fun addManualConfig(context: Context, link: String): Boolean {
     return withContext(Dispatchers.IO) {
         try {
             val node = parseLink(link.trim(), "manual_node") ?: return@withContext false
+            node.put("comment", "Sourced from Manual Input")
             
             val config = JSONObject()
             config.put("log", JSONObject().put("disabled", false).put("level", "info").put("timestamp", true))
