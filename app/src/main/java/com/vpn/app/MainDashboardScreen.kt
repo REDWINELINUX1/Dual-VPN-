@@ -50,7 +50,6 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
         if (intent != null) {
             vpnLauncher.launch(intent)
         } else {
-            // اگر مجوز از قبل داده شده بود، مستقیماً فعال شود
             Toast.makeText(context, "VPN Active & Running", Toast.LENGTH_SHORT).show()
             statusOverride = "VPN Connected"
         }
@@ -86,7 +85,6 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
                                 if (success) {
                                     Toast.makeText(context, "Manual config applied!", Toast.LENGTH_SHORT).show()
                                     statusOverride = "Manual Config Active"
-                                    // فعال‌سازی سیستم VPN
                                     triggerVpnConnection()
                                 } else {
                                     Toast.makeText(context, "Invalid link format!", Toast.LENGTH_SHORT).show()
@@ -180,7 +178,6 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
                             isLoading = false
                             if (success) {
                                 Toast.makeText(context, s.configDone, Toast.LENGTH_SHORT).show()
-                                // فعال‌سازی سیستم VPN پس از ساخت موفق کانفیگ
                                 triggerVpnConnection()
                             }
                         }
@@ -212,7 +209,7 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
                     Text(
                         text = "Add Manual Config",
                         fontSize = 15.sp,
-                        fontWeight/FontWeight = FontWeight.Bold // Note: keeping proper syntax
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
