@@ -31,27 +31,32 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
     var manualLink by remember { mutableStateOf("") }
     val statusText = statusOverride ?: s.ready
 
-    // راه‌انداز درخواست مجوز سیستم‌عامل برای فعال‌سازی VPN
+    // تابع استارت واقعی سرویس VPN برای نمایش آیکون در نوار بالا
+    fun startVpnService() {
+        val serviceIntent = Intent(context, MyVpnService::class.java)
+        context.startService(serviceIntent)
+        Toast.makeText(context, "VPN Activated & Running!", Toast.LENGTH_SHORT).show()
+        statusOverride = "VPN Connected"
+    }
+
+    // راه‌انداز درخواست مجوز سیستم‌عامل
     val vpnLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            Toast.makeText(context, "VPN Activated Successfully!", Toast.LENGTH_SHORT).show()
-            statusOverride = "VPN Connected"
+            startVpnService()
         } else {
             Toast.makeText(context, "VPN Permission Denied", Toast.LENGTH_SHORT).show()
             statusOverride = "Permission Denied"
         }
     }
 
-    // تابع کمکی برای درخواست و استارت سرویس VPN سیستم
     fun triggerVpnConnection() {
         val intent = VpnService.prepare(context)
         if (intent != null) {
             vpnLauncher.launch(intent)
         } else {
-            Toast.makeText(context, "VPN Active & Running", Toast.LENGTH_SHORT).show()
-            statusOverride = "VPN Connected"
+            startVpnService()
         }
     }
 
@@ -167,7 +172,6 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // دکمه دریافت خودکار کانفیگ‌ها و اتصال VPN
                 Button(
                     onClick = {
                         isLoading = true
@@ -197,7 +201,6 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // دکمه افزودن کانفیگ دستی
                 OutlinedButton(
                     onClick = { showManualDialog = true },
                     enabled = !isLoading,
