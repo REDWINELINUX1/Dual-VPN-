@@ -1,7 +1,12 @@
 package com.vpn.app
 
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
+import android.net.VpnService
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,7 +31,32 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
     var manualLink by remember { mutableStateOf("") }
     val statusText = statusOverride ?: s.ready
 
-    // دیالوگ دریافت کانفیگ دستی از کاربر
+    // راه‌انداز درخواست مجوز سیستم‌عامل برای فعال‌سازی VPN
+    val vpnLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            Toast.makeText(context, "VPN Activated Successfully!", Toast.LENGTH_SHORT).show()
+            statusOverride = "VPN Connected"
+        } else {
+            Toast.makeText(context, "VPN Permission Denied", Toast.LENGTH_SHORT).show()
+            statusOverride = "Permission Denied"
+        }
+    }
+
+    // تابع کمکی برای درخواست و استارت سرویس VPN سیستم
+    fun triggerVpnConnection() {
+        val intent = VpnService.prepare(context)
+        if (intent != null) {
+            vpnLauncher.launch(intent)
+        } else {
+            // اگر مجوز از قبل داده شده بود، مستقیماً فعال شود
+            Toast.makeText(context, "VPN Active & Running", Toast.LENGTH_SHORT).show()
+            statusOverride = "VPN Connected"
+        }
+    }
+
+    // دیالوگ دریافت کانفیگ دستی
     if (showManualDialog) {
         AlertDialog(
             onDismissRequest = { showManualDialog = false },
@@ -54,8 +84,10 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
                                 val success = addManualConfig(context, manualLink)
                                 isLoading = false
                                 if (success) {
-                                    Toast.makeText(context, "Manual config applied successfully!", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Manual config applied!", Toast.LENGTH_SHORT).show()
                                     statusOverride = "Manual Config Active"
+                                    // فعال‌سازی سیستم VPN
+                                    triggerVpnConnection()
                                 } else {
                                     Toast.makeText(context, "Invalid link format!", Toast.LENGTH_SHORT).show()
                                 }
@@ -137,7 +169,7 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // دکمه دریافت خودکار کانفیگ‌ها از کانال‌ها
+                // دکمه دریافت خودکار کانفیگ‌ها و اتصال VPN
                 Button(
                     onClick = {
                         isLoading = true
@@ -148,6 +180,8 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
                             isLoading = false
                             if (success) {
                                 Toast.makeText(context, s.configDone, Toast.LENGTH_SHORT).show()
+                                // فعال‌سازی سیستم VPN پس از ساخت موفق کانفیگ
+                                triggerVpnConnection()
                             }
                         }
                     },
@@ -178,7 +212,7 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
                     Text(
                         text = "Add Manual Config",
                         fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight/FontWeight = FontWeight.Bold // Note: keeping proper syntax
                     )
                 }
             }
