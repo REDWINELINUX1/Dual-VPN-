@@ -11,8 +11,7 @@ private fun startVpnTunnel() {
 
         vpnInterface?.let { pfd ->
             val configFile = java.io.File(filesDir, "config.json")
-            if (configFile.exists()) {
-                // علامت // را از ابتدای این خط بردارید تا هسته اجرا شود:
+            if (configFile.exists()) {:
                 LibSingBox.run(configFile.absolutePath, pfd.fd)
             }
         }
