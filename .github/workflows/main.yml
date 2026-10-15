@@ -28,7 +28,12 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.9"
+          gradle-version: "6.9"
+
+      - name: Download libbox.aar automatically
+        run: |
+          mkdir -p app/libs
+          curl -L -o app/libs/libbox.aar "https://github.com/SagerNet/sing-box-for-android/raw/androidx/app/libs/libbox.aar"
 
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
@@ -38,3 +43,4 @@ jobs:
         with:
           name: dual-vpn-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+          
