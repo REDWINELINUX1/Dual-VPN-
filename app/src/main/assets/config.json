@@ -6,18 +6,18 @@ private fun startVpnTunnel() {
             .addAddress("10.0.0.2", 24)
             .addRoute("0.0.0.0", 0)
             .addDnsServer("8.8.8.8")
-        
+
         vpnInterface = builder.establish()
-        
-        // این بخش باید اضافه شود تا هسته sing-box با فایل کانفیگ و پد تونل شروع به کار کند
+
         vpnInterface?.let { pfd ->
             val configFile = java.io.File(filesDir, "config.json")
             if (configFile.exists()) {
-                // فراخوانی متد استارت هسته sing-box با استفاده از پد فایلدسکریپتور (pfd.fd)
-                // LibSingBox.run(configFile.absolutePath, pfd.fd)
+                // علامت // را از ابتدای این خط بردارید تا هسته اجرا شود:
+                LibSingBox.run(configFile.absolutePath, pfd.fd)
             }
         }
     } catch (e: Exception) {
         e.printStackTrace()
     }
 }
+    
