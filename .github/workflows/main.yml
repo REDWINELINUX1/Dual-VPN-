@@ -30,7 +30,7 @@ jobs:
         with:
           gradle-version: "8.7"
 
-            - name: Download and prepare libbox automatically
+       - name: Download and prepare libbox automatically
         run: |
           mkdir -p app/libs
           mkdir -p app/src/main/jniLibs
