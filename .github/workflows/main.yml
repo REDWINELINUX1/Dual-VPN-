@@ -34,12 +34,14 @@ jobs:
         run: |
           mkdir -p app/libs
           mkdir -p app/src/main/jniLibs
-          curl -L -o libbox.aar "https://github.com/EbrahimTahernejad/sing-box-lib/releases/latest/download/libbox.aar"
+          curl -L --fail -o libbox.aar "https://github.com/EbrahimTahernejad/sing-box-lib/releases/latest/download/libbox.aar"
+          ls -lh libbox.aar
           unzip -q libbox.aar -d libbox_temp
           cp libbox_temp/classes.jar app/libs/libbox.jar
           if [ -d "libbox_temp/jni" ]; then
             cp -r libbox_temp/jni/* app/src/main/jniLibs/
           fi
+          
 
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
