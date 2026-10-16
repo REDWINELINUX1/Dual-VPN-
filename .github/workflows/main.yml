@@ -42,8 +42,8 @@ jobs:
           rm -rf sbox_source
           git clone https://github.com/SagerNet/sing-box.git sbox_source
           cd sbox_source
-          go install golang.org/x/mobile/cmd/gomobile@latest
-          go install golang.org/x/mobile/cmd/gobind@latest
+          go install github.com/sagerNet/gomobile/cmd/gomobile@latest
+          go install github.com/sagerNet/gomobile/cmd/gobind@latest
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
           export PATH=$PATH:$(go env GOPATH)/bin
           gomobile init
