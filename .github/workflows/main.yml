@@ -26,9 +26,15 @@ jobs:
 
       - name: Set up Android NDK r26
         run: |
-          echo "y" | sdkmanager "ndk;26.1.10909125"
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
-          echo "$ANDROID_HOME/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin" >> $GITHUB_PATH
+          ANDROID_NDK_VERSION="26.1.10909125"
+          NDK_ZIP="android-ndk-r26b-linux.zip"
+          curl -O https://dl.google.com/android/repository/$NDK_ZIP
+          unzip -q $NDK_ZIP
+          mkdir -p $ANDROID_HOME/ndk/$ANDROID_NDK_VERSION
+          mv android-ndk-r26b/* $ANDROID_HOME/ndk/$ANDROID_NDK_VERSION/
+          rm -rf $NDK_ZIP android-ndk-r26b
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION" >> $GITHUB_ENV
+          echo "$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION/toolchains/llvm/prebuilt/linux-x86_64/bin" >> $GITHUB_PATH
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -76,4 +82,3 @@ jobs:
         with:
           name: dual-vpn-debug-apk
           path: app/build/outputs/apk/debug/*.apk
-          
