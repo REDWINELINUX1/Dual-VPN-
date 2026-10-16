@@ -30,18 +30,25 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Download and prepare libbox automatically
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Build and prepare libbox automatically
         run: |
           mkdir -p app/libs
           mkdir -p app/src/main/jniLibs
-          curl -L --fail -o libbox.aar "https://github.com/EbrahimTahernejad/sing-box-lib/releases/latest/download/libbox.aar"
-          ls -lh libbox.aar
+          git clone https://github.com/SagerNet/sing-box.git
+          cd sing-box
+          make lib_android
+          cp libbox.aar ../libbox.aar
+          cd ..
           unzip -q libbox.aar -d libbox_temp
           cp libbox_temp/classes.jar app/libs/libbox.jar
           if [ -d "libbox_temp/jni" ]; then
             cp -r libbox_temp/jni/* app/src/main/jniLibs/
           fi
-          
 
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
@@ -51,4 +58,3 @@ jobs:
         with:
           name: dual-vpn-debug-apk
           path: app/build/outputs/apk/debug/*.apk
-          
