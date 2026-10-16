@@ -42,6 +42,11 @@ jobs:
           rm -rf sbox_source
           git clone https://github.com/SagerNet/sing-box.git sbox_source
           cd sbox_source
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          go install golang.org/x/mobile/cmd/gobind@latest
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+          export PATH=$PATH:$(go env GOPATH)/bin
+          gomobile init
           make lib_android
           cp libbox.aar ../libbox.aar
           cd ..
