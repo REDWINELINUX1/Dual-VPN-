@@ -22,7 +22,7 @@ jobs:
       - name: Set up Swap Space
         uses: pierotofy/set-swap-space@master
         with:
-          swap-size-mb: 4096
+          swap-size-gb: 4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -61,6 +61,22 @@ jobs:
             cp -r libbox_temp/jni/* app/src/main/jniLibs/
           fi
           rm -rf sbox_source libbox_temp libbox.aar
+
+      - name: Dump libbox API
+        run: |
+          mkdir -p api
+          unzip -l app/libs/libbox.jar | awk '{print $4}' | grep '^io/nekohasekai/libbox/.*\.class$' | sed 's/\.class$//; s#/#.#g' > api/classes.txt
+          javap -classpath app/libs/libbox.jar -public $(cat api/classes.txt) > api/libbox-api.txt
+          echo "## libbox API" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat api/libbox-api.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload libbox API
+        uses: actions/upload-artifact@v4
+        with:
+          name: libbox-api
+          path: api/
 
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
