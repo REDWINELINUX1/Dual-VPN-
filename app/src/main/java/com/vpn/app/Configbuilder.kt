@@ -331,7 +331,6 @@ suspend fun buildConfig(
                     if (nodes.length() >= MAX_NODES) break
                     val tag = "${channel}_n${nodes.length()}"
                     val node = parseLink(link, tag) ?: continue
-                    node.put("comment", "Sourced from Telegram Channel: @$channel")
 
                     val key = node.getString("type") + "|" + node.getString("server") + "|" +
                             node.getInt("server_port") + "|" +
@@ -408,6 +407,8 @@ suspend fun buildConfig(
             config.put("route", fixedRoute)
             config.put("outbounds", outbounds)
 
+            addTunAndDns(config)
+
             val text = config.toString(4)
             File(context.filesDir, "config.json").writeText(text)
 
@@ -430,27 +431,26 @@ suspend fun addManualConfig(context: Context, link: String): Boolean {
     return withContext(Dispatchers.IO) {
         try {
             val node = parseLink(link.trim(), "manual_node") ?: return@withContext false
-            node.put("comment", "Sourced from Manual Input")
-            
+
             val config = JSONObject()
             config.put("log", JSONObject().put("disabled", false).put("level", "info").put("timestamp", true))
-            
+
             val outbounds = JSONArray()
-            
+
             val selectorList = JSONArray()
             selectorList.put("manual_node")
             selectorList.put("direct")
-            
+
             val selector = JSONObject()
             selector.put("type", "selector")
             selector.put("tag", "select")
             selector.put("outbounds", selectorList)
             selector.put("default", "manual_node")
             outbounds.put(selector)
-            
+
             outbounds.put(JSONObject().put("type", "direct").put("tag", "direct"))
             outbounds.put(node)
-            
+
             val fixedRules = JSONArray()
             fixedRules.put(JSONObject().put("action", "sniff"))
             fixedRules.put(
@@ -469,10 +469,12 @@ suspend fun addManualConfig(context: Context, link: String): Boolean {
             fixedRoute.put("rules", fixedRules)
             fixedRoute.put("final", "select")
             fixedRoute.put("auto_detect_interface", true)
-            
+
             config.put("route", fixedRoute)
             config.put("outbounds", outbounds)
-            
+
+            addTunAndDns(config)
+
             val text = config.toString(4)
             File(context.filesDir, "config.json").writeText(text)
             saveToDownloads(context, "manual-vpn-config.json", text)
