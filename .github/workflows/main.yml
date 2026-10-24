@@ -78,6 +78,12 @@ jobs:
           name: libbox-api
           path: api/
 
+      - name: Download Geo files for sing-box
+        run: |
+          mkdir -p app/src/main/assets
+          curl -L -o app/src/main/assets/geoip.db https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.db
+          curl -L -o app/src/main/assets/geosite.db https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.db
+
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
 
