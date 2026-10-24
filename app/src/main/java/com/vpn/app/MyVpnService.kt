@@ -48,6 +48,22 @@ class MyVpnService : VpnService(), PlatformInterface {
     private fun startBox() {
         stopBox()
         try {
+            // کپی کردن خودکار فایل‌های دیتابیس از assets به حافظه داخلی برای جلوگیری از کرش
+            listOf("geoip.db", "geosite.db").forEach { fileName ->
+                val outFile = File(filesDir, fileName)
+                if (!outFile.exists()) {
+                    try {
+                        assets.open(fileName).use { input ->
+                            outFile.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to copy $fileName", e)
+                    }
+                }
+            }
+
             val configFile = File(filesDir, "config.json")
             if (!configFile.exists()) {
                 toast("config.json not found")
