@@ -55,7 +55,7 @@ class MyVpnService : VpnService(), PlatformInterface {
             }
             val text = configFile.readText()
             if (!libReady) {
-                Libbox.setup(filesDir.path, filesDir.path, cacheDir.path, false(
+                Libbox.setup(filesDir.path, filesDir.path, cacheDir.path, false)
                 libReady = true
             }
             val service = Libbox.newService(text, this)
