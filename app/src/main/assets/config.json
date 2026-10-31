@@ -1,22 +1,62 @@
-private fun startVpnTunnel() {
-    try {
-        vpnInterface?.close()
-        val builder = Builder()
-            .setSession("Dual VPN")
-            .addAddress("10.0.0.2", 24)
-            .addRoute("0.0.0.0", 0)
-            .addDnsServer("8.8.8.8")
-
-        vpnInterface = builder.establish()
-
-        vpnInterface?.let { pfd ->
-            val configFile = java.io.File(filesDir, "config.json")
-            if (configFile.exists()) {:
-                LibSingBox.run(configFile.absolutePath, pfd.fd)
-            }
-        }
-    } catch (e: Exception) {
-        e.printStackTrace()
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "dns": {
+    "servers": [
+      {
+        "tag": "google-dns",
+        "address": "8.8.8.8",
+        "detour": "proxy"
+      }
+    ],
+    "strategy": "ipv4_only"
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "inet4_address": "172.19.0.1/30",
+      "auto_route": true,
+      "strict_route": true,
+      "stack": "system",
+      "sniff": true
     }
+  ],
+  "outbounds": [
+    {
+      "type": "vless",
+      "tag": "proxy",
+      "server": "آدرس_سرور_شما",
+      "server_port": 443,
+      "uuid": "یودید_یا_رمز_شما",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "sni_شما",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      }
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "block",
+      "tag": "block"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "protocol": "dns",
+        "action": "hijack-dns"
+      }
+    ],
+    "auto_detect_interface": true
+  }
 }
-    
