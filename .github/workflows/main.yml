@@ -1,20 +1,94 @@
-{
-  "log": {
-    "level": "info"
-  },
-  "inbounds": [
-    {
-      "type": "tun",
-      "tag": "tun-in",
-      "inet4_address": "172.19.0.1/30",
-      "auto_route": true,
-      "stack": "system"
-    }
-  ],
-  "outbounds": [
-    {
-      "type": "direct",
-      "tag": "direct"
-    }
-  ]
-}
+Name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - ".github/workflows/**"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build libbox locally (Stable version)
+        run: |
+          mkdir -p app/libs
+          mkdir -p app/src/main/jniLibs
+          rm -rf sbox_source
+          git clone --branch v1.10.2 https://github.com/SagerNet/sing-box.git sbox_source
+          cd sbox_source
+          go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.12
+          go install github.com/sagernet/gomobile/cmd/gobind@v0.1.12
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+          export PATH=$PATH:$(go env GOPATH)/bin
+          gomobile init
+          make lib_android
+          cp libbox.aar ../libbox.aar
+          cd ..
+          unzip -q libbox.aar -d libbox_temp
+          cp libbox_temp/classes.jar app/libs/libbox.jar
+          if [ -d "libbox_temp/jni" ]; then
+            cp -r libbox_temp/jni/* app/src/main/jniLibs/
+          fi
+          rm -rf sbox_source libbox_temp libbox.aar
+
+      - name: Dump libbox API
+        run: |
+          mkdir -p api
+          unzip -l app/libs/libbox.jar | awk '{print $4}' | grep '^io/nekohasekai/libbox/.*\.class$' | sed 's/\.class$//; s#/#.#g' > api/classes.txt
+          javap -classpath app/libs/libbox.jar -public $(cat api/classes.txt) > api/libbox-api.txt
+          echo "## libbox API" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat api/libbox-api.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload libbox API
+        uses: actions/upload-artifact@v4
+        with:
+          name: libbox-api
+          path: api/
+
+      - name: Download Geo files for sing-box
+        run: |
+          mkdir -p app/src/main/assets
+          curl -L -o app/src/main/assets/geoip.db https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geoip.db
+          curl -L -o app/src/main/assets/geosite.db https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geosite.db
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: dual-vpn-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
