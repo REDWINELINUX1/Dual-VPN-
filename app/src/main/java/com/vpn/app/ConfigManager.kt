@@ -1,4 +1,4 @@
-package com.redwinelinux.dualvpn
+package com.vpn.app
 
 import android.content.Context
 import org.json.JSONArray
@@ -11,8 +11,8 @@ object ConfigManager {
 
     fun generateAndSaveConfig(context: Context, rawContent: String) {
         try {
-            
-            let decodedContent = if (isBase64(rawContent)) {
+            // اصلاح نحوه‌ی تعریف متغیر و بررسی Base64
+            val decodedContent = if (isBase64(rawContent)) {
                 String(Base64.getDecoder().decode(rawContent.trim()), Charsets.UTF_8)
             } else {
                 rawContent
@@ -37,7 +37,7 @@ object ConfigManager {
 
             if (outboundTags.length() == 0) return
 
-          
+            // ایجاد گروه urltest برای جابجایی خودکار بین سرورهای سالم
             val urlTestOutbound = JSONObject().apply {
                 put("type", "urltest")
                 put("tag", "auto-select")
@@ -47,7 +47,7 @@ object ConfigManager {
                 put("tolerance", 50)
             }
 
-          
+            // ترکیب خروجی‌ها (ابتدا auto-select، سپس سرورها، و در نهایت direct و block)
             val finalOutbounds = JSONArray().apply {
                 put(urlTestOutbound)
                 for (i in 0 until outboundsArray.length()) {
@@ -63,7 +63,7 @@ object ConfigManager {
                 })
             }
 
-            
+            // ساختار کامل فایل config.json برای sing-box
             val configJson = JSONObject().apply {
                 put("log", JSONObject().put("level", "info").put("timestamp", true))
                 put("dns", JSONObject().apply {
@@ -86,7 +86,7 @@ object ConfigManager {
                 })
             }
 
-            
+            // ذخیره نهایی در حافظه داخلی برنامه (filesDir)
             val configFile = File(context.filesDir, "config.json")
             configFile.writeText(configJson.toString(2))
 
