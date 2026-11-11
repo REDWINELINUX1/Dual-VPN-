@@ -1,6 +1,9 @@
 package com.vpn.app
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.IpPrefix
 import android.net.LinkProperties
@@ -15,6 +18,7 @@ import android.os.Process
 import android.system.OsConstants
 import android.util.Log
 import android.widget.Toast
+import androidx.core.app.NotificationCompat
 import io.nekohasekai.libbox.BoxService
 import io.nekohasekai.libbox.InterfaceUpdateListener
 import io.nekohasekai.libbox.Libbox
@@ -41,14 +45,47 @@ class MyVpnService : VpnService(), PlatformInterface {
     private var lastIface: Pair<String, Int>? = Pair("?", -2)
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // راه‌اندازی سرویس پیش‌زمینه و نوتیفیکیشن برای جلوگیری از کرش توسط سیستم‌عامل
+        startForegroundService()
         worker.execute { startBox() }
         return START_STICKY
+    }
+
+    private fun startForegroundService() {
+        val channelId = "dual_vpn_channel"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                channelId,
+                "Dual VPN Service",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            val manager = getSystemService(NotificationManager::class.java)
+            manager?.createNotificationChannel(channel)
+        }
+
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setContentTitle("Dual VPN")
+            .setContentText("اتصال VPN فعال و پایدار است")
+            .setSmallIcon(android.R.drawable.ic_lock_lock)
+            .setOngoing(true)
+            .build()
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) { // اندروید 14 به بالا
+                startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_VPN)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+            } else {
+                startForeground(1, notification)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "startForeground failed", e)
+        }
     }
 
     private fun startBox() {
         stopBox()
         try {
-            // کپی کردن خودکار فایل‌های دیتابیس از assets به حافظه داخلی برای جلوگیری از کرش
             listOf("geoip.db", "geosite.db").forEach { fileName ->
                 val outFile = File(filesDir, fileName)
                 if (!outFile.exists()) {
