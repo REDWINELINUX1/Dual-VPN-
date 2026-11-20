@@ -45,7 +45,6 @@ class MyVpnService : VpnService(), PlatformInterface {
     private var lastIface: Pair<String, Int>? = Pair("?", -2)
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // راه‌اندازی سرویس پیش‌زمینه و نوتیفیکیشن برای جلوگیری از کرش توسط سیستم‌عامل
         startForegroundService()
         worker.execute { startBox() }
         return START_STICKY
@@ -65,13 +64,13 @@ class MyVpnService : VpnService(), PlatformInterface {
 
         val notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("Dual VPN")
-            .setContentText("اتصال VPN فعال و پایدار است")
+            .setContentText("Connected")
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setOngoing(true)
             .build()
 
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) { // اندروید 14 به بالا
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_VPN)
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
