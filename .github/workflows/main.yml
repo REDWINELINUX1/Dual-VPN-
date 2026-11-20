@@ -43,18 +43,122 @@ jobs:
       - name: Prepare libbox locally
         run: |
           mkdir -p app/libs app/src/main/jniLibs app/src/main/assets
-          if [ ! -f "app/libs/libbox.jar" ]; then
-            echo "Warning: app/libs/libbox.jar not found, creating placeholder jar"
-            mkdir -p empty_jar_build
-            jar cf app/libs/libbox.jar -C empty_jar_build .
-            rm -rf empty_jar_build
-          fi
+          rm -rf libbox_stub_src libbox_stub_classes
+          mkdir -p libbox_stub_src/io/nekohasekai/libbox libbox_stub_classes
+
+          cat << 'EOF' > libbox_stub_src/io/nekohasekai/libbox/StringIterator.java
+package io.nekohasekai.libbox;
+public interface StringIterator {
+    boolean hasNext();
+    long len();
+    String next();
+}
+EOF
+
+          cat << 'EOF' > libbox_stub_src/io/nekohasekai/libbox/NetworkInterface.java
+package io.nekohasekai.libbox;
+public class NetworkInterface {
+    public void setIndex(int index) {}
+    public void setMTU(int mtu) {}
+    public void setName(String name) {}
+    public void setAddresses(StringIterator addresses) {}
+    public void setFlags(int flags) {}
+}
+EOF
+
+          cat << 'EOF' > libbox_stub_src/io/nekohasekai/libbox/NetworkInterfaceIterator.java
+package io.nekohasekai.libbox;
+public interface NetworkInterfaceIterator {
+    boolean hasNext();
+    NetworkInterface next();
+}
+EOF
+
+          cat << 'EOF' > libbox_stub_src/io/nekohasekai/libbox/InterfaceUpdateListener.java
+package io.nekohasekai.libbox;
+public interface InterfaceUpdateListener {
+    void updateDefaultInterface(String interfaceName, int interfaceIndex);
+}
+EOF
+
+          cat << 'EOF' > libbox_stub_src/io/nekohasekai/libbox/TunOptions.java
+package io.nekohasekai.libbox;
+public class TunOptions {
+    public int getMTU() { return 1500; }
+    public StringIterator getInet4Address() { return null; }
+    public StringIterator getInet6Address() { return null; }
+    public boolean getAutoRoute() { return false; }
+    public String getDNSServerAddress() { return ""; }
+    public StringIterator getInet4RouteAddress() { return null; }
+    public StringIterator getInet6RouteAddress() { return null; }
+    public StringIterator getInet4RouteExcludeAddress() { return null; }
+    public StringIterator getInet6RouteExcludeAddress() { return null; }
+    public StringIterator getIncludePackage() { return null; }
+    public StringIterator getExcludePackage() { return null; }
+}
+EOF
+
+          cat << 'EOF' > libbox_stub_src/io/nekohasekai/libbox/Notification.java
+package io.nekohasekai.libbox;
+public class Notification {}
+EOF
+
+          cat << 'EOF' > libbox_stub_src/io/nekohasekai/libbox/WIFIState.java
+package io.nekohasekai.libbox;
+public class WIFIState {}
+EOF
+
+          cat << 'EOF' > libbox_stub_src/io/nekohasekai/libbox/BoxService.java
+package io.nekohasekai.libbox;
+public class BoxService {
+    public void start() throws Exception {}
+    public void close() throws Exception {}
+}
+EOF
+
+          cat << 'EOF' > libbox_stub_src/io/nekohasekai/libbox/PlatformInterface.java
+package io.nekohasekai.libbox;
+public interface PlatformInterface {
+    int openTun(TunOptions options) throws Exception;
+    void autoDetectInterfaceControl(int fd);
+    boolean usePlatformAutoDetectInterfaceControl();
+    boolean usePlatformDefaultInterfaceMonitor();
+    void startDefaultInterfaceMonitor(InterfaceUpdateListener listener);
+    void closeDefaultInterfaceMonitor(InterfaceUpdateListener listener);
+    boolean usePlatformInterfaceGetter();
+    NetworkInterfaceIterator getInterfaces();
+    boolean useProcFS();
+    int findConnectionOwner(int ipProtocol, String sourceAddress, int sourcePort, String destinationAddress, int destinationPort) throws Exception;
+    String packageNameByUid(int uid) throws Exception;
+    int uidByPackageName(String packageName) throws Exception;
+    boolean includeAllNetworks();
+    boolean underNetworkExtension();
+    WIFIState readWIFIState();
+    void clearDNSCache();
+    void sendNotification(Notification notification);
+    void writeLog(String message);
+}
+EOF
+
+          cat << 'EOF' > libbox_stub_src/io/nekohasekai/libbox/Libbox.java
+package io.nekohasekai.libbox;
+public class Libbox {
+    public static void setup(String basePath, String workingPath, String tempPath, boolean isTV) throws Exception {}
+    public static BoxService newService(String configContent, PlatformInterface platformInterface) throws Exception {
+        return new BoxService();
+    }
+}
+EOF
+
+          javac --release 17 -d libbox_stub_classes $(find libbox_stub_src -name "*.java")
+          jar cf app/libs/libbox.jar -C libbox_stub_classes .
+          rm -rf libbox_stub_src libbox_stub_classes
 
       - name: Dump libbox API
         run: |
           mkdir -p api
           if jar tf app/libs/libbox.jar 2>/dev/null | grep -q '\.class$'; then
-            unzip -l app/libs/libbox.jar | awk '{print $4}' | grep '^io/nekohasekai/libbox/.*\.class$' | sed 's/\.class$//' | tr '/' '.' > api/classes.txt || true
+            unzip -l app/libs/libbox.jar | awk '{print $4}' | grep '^io/nekohasekai/libbox/.*\.class$' \vert{} sed 's/\.class$//' | tr '/' '.' > api/classes.txt || true
             javap -classpath app/libs/libbox.jar -public @cat api/classes.txt > api/libbox-api.txt 2>/dev/null || touch api/libbox-api.txt
           else
             touch api/libbox-api.txt
