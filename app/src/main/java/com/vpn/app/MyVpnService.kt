@@ -70,8 +70,8 @@ class MyVpnService : VpnService(), PlatformInterface {
             .build()
 
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                startForeground(1, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_VPN)
+            if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(1, notification, 0x40000000)
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
             } else {
@@ -392,7 +392,7 @@ class MyVpnService : VpnService(), PlatformInterface {
     private class StringArray(private val items: List<String>) : StringIterator {
         private var index = 0
         override fun hasNext(): Boolean = index < items.size
-        override fun len(): Int = items.size
+        override fun len(): Long = items.size.toLong()
         override fun next(): String = items[index++]
     }
 
