@@ -55,6 +55,20 @@ jobs:
               String next();
           }
           """,
+              "RoutePrefix.java": """package io.nekohasekai.libbox;
+          public class RoutePrefix {
+              public String address() { return "0.0.0.0"; }
+              public int prefix() { return 0; }
+              public String getAddress() { return "0.0.0.0"; }
+              public int getPrefix() { return 0; }
+          }
+          """,
+              "RoutePrefixIterator.java": """package io.nekohasekai.libbox;
+          public interface RoutePrefixIterator {
+              boolean hasNext();
+              RoutePrefix next();
+          }
+          """,
               "NetworkInterface.java": """package io.nekohasekai.libbox;
           public class NetworkInterface {
               public void setIndex(int index) {}
@@ -78,14 +92,14 @@ jobs:
               "TunOptions.java": """package io.nekohasekai.libbox;
           public class TunOptions {
               public int getMTU() { return 1500; }
-              public StringIterator getInet4Address() { return null; }
-              public StringIterator getInet6Address() { return null; }
+              public RoutePrefixIterator getInet4Address() { return null; }
+              public RoutePrefixIterator getInet6Address() { return null; }
               public boolean getAutoRoute() { return false; }
               public String getDNSServerAddress() { return ""; }
-              public StringIterator getInet4RouteAddress() { return null; }
-              public StringIterator getInet6RouteAddress() { return null; }
-              public StringIterator getInet4RouteExcludeAddress() { return null; }
-              public StringIterator getInet6RouteExcludeAddress() { return null; }
+              public RoutePrefixIterator getInet4RouteAddress() { return null; }
+              public RoutePrefixIterator getInet6RouteAddress() { return null; }
+              public RoutePrefixIterator getInet4RouteExcludeAddress() { return null; }
+              public RoutePrefixIterator getInet6RouteExcludeAddress() { return null; }
               public StringIterator getIncludePackage() { return null; }
               public StringIterator getExcludePackage() { return null; }
           }
