@@ -10,7 +10,7 @@ android {
 
     defaultConfig {
         applicationId = "com.vpn.app"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -69,12 +69,11 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
-implementation(files("libs/libbox.jar"))
-
+    implementation(files("libs/libbox.jar"))
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     // If you use sing-box as a library (libbox.aar), place it in app/libs/
-    // and uncomment the next line:
+    // and uncomment the next line
     // implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
 }
