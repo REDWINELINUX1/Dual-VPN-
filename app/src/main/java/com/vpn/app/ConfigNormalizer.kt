@@ -8,9 +8,10 @@ object ConfigNormalizer {
 
     fun normalizeConfig(config: JSONObject): JSONObject {
         normalizeDnsServers(config.optJSONObject("dns"))
-        normalizeArrayObjects(config.optJSONArray("inbounds"), "inbound")
+        val inboundRules = normalizeArrayObjects(config.optJSONArray("inbounds"), "inbound")
         normalizeArrayObjects(config.optJSONArray("outbounds"), "outbound")
         normalizeRoute(config.optJSONObject("route"))
+        prependInboundRules(config, inboundRules)
         normalizeExperimental(config.optJSONObject("experimental"))
         return config
     }
@@ -107,42 +108,168 @@ object ConfigNormalizer {
         }
     }
 
-    private fun normalizeArrayObjects(array: JSONArray?, section: String) {
-        if (array == null) return
+    private fun normalizeArrayObjects(array: JSONArray?, section: String): JSONArray {
+        val generatedRules = JSONArray()
+        if (array == null) return generatedRules
+
+        val usedInboundTags = mutableSetOf<String>()
+        if (section == "inbound") {
+            for (i in 0 until array.length()) {
+                array.optJSONObject(i)?.optString("tag")
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(usedInboundTags::add)
+            }
+        }
+
         for (i in 0 until array.length()) {
             val item = array.optJSONObject(i) ?: continue
             if (!item.has("type") && item.has("protocol")) {
                 item.put("type", item.optString("protocol"))
             }
 
-            if (section == "inbound") normalizeInbound(item)
+            if (section == "inbound") {
+                generatedRules.putAll(normalizeInbound(item, i, usedInboundTags))
+            }
             if (section == "outbound") normalizeOutbound(item)
         }
+        return generatedRules
     }
 
-    private fun normalizeInbound(inbound: JSONObject) {
-        val inet4 = inbound.opt("inet4_address")
-        val inet6 = inbound.opt("inet6_address")
-        if (inet4 != null || inet6 != null) {
-            val addresses = inbound.optJSONArray("address") ?: JSONArray()
-            if (inet4 != null) appendAddress(addresses, inet4)
-            if (inet6 != null) appendAddress(addresses, inet6)
-            inbound.put("address", addresses)
-            inbound.remove("inet4_address")
-            inbound.remove("inet6_address")
+    private fun normalizeInbound(
+        inbound: JSONObject,
+        index: Int,
+        usedTags: MutableSet<String>
+    ): JSONArray {
+        val generatedRules = JSONArray()
+        val type = inbound.optString("type")
+        if (type == "tun") {
+            mergeLegacyAddressFields(
+                inbound,
+                "address",
+                listOf("inet4_address", "inet6_address")
+            )
+            mergeLegacyAddressFields(
+                inbound,
+                "route_address",
+                listOf("inet4_route_address", "inet6_route_address")
+            )
+            mergeLegacyAddressFields(
+                inbound,
+                "route_exclude_address",
+                listOf("inet4_route_exclude_address", "inet6_route_exclude_address")
+            )
+            inbound.remove("gso")
+            inbound.remove("endpoint_independent_nat")
+        }
+
+        val sniff = inbound.optBoolean("sniff", false)
+        val sniffOverride = inbound.optBoolean("sniff_override_destination", false)
+        val sniffTimeout = (inbound.opt("sniff_timeout") as? String)
+            ?.takeIf { it.isNotBlank() }
+        val domainStrategy = (inbound.opt("domain_strategy") as? String)
+            ?.takeIf { it.isNotBlank() }
+        val udpDisableDomainUnmapping = inbound.optBoolean("udp_disable_domain_unmapping", false)
+
+        inbound.remove("sniff")
+        inbound.remove("sniff_override_destination")
+        inbound.remove("sniff_timeout")
+        inbound.remove("domain_strategy")
+        inbound.remove("udp_disable_domain_unmapping")
+
+        val hasLegacyOptions = sniff || sniffOverride ||
+            domainStrategy != null ||
+            udpDisableDomainUnmapping
+        if (hasLegacyOptions) {
+            val tag = inbound.optString("tag").takeIf { it.isNotBlank() }
+                ?: createInboundTag(inbound, index, usedTags)
+
+            if (domainStrategy != null) {
+                generatedRules.put(
+                    JSONObject()
+                        .put("inbound", tag)
+                        .put("action", "resolve")
+                        .put("strategy", domainStrategy)
+                )
+            }
+            if (sniff || sniffOverride) {
+                val sniffRule = JSONObject()
+                    .put("inbound", tag)
+                    .put("action", "sniff")
+                if (sniffTimeout != null) {
+                    sniffRule.put("timeout", sniffTimeout)
+                }
+                generatedRules.put(sniffRule)
+            }
+            if (udpDisableDomainUnmapping) {
+                generatedRules.put(
+                    JSONObject()
+                        .put("inbound", tag)
+                        .put("action", "route-options")
+                        .put("udp_disable_domain_unmapping", true)
+                )
+            }
         }
 
         if (inbound.has("listen_port") && inbound.opt("listen_port") is Number) {
             inbound.put("listen_port", inbound.optInt("listen_port"))
         }
+        return generatedRules
+    }
+
+    private fun createInboundTag(
+        inbound: JSONObject,
+        index: Int,
+        usedTags: MutableSet<String>
+    ): String {
+        var tag = "inbound-$index"
+        var suffix = 1
+        while (!usedTags.add(tag)) {
+            tag = "inbound-$index-${suffix++}"
+        }
+        inbound.put("tag", tag)
+        return tag
+    }
+
+    private fun mergeLegacyAddressFields(
+        inbound: JSONObject,
+        currentKey: String,
+        legacyKeys: List<String>
+    ) {
+        val addresses = JSONArray()
+        inbound.optJSONArray(currentKey)?.let { appendAddress(addresses, it) }
+            ?: inbound.opt(currentKey)?.let { appendAddress(addresses, it) }
+        var foundLegacyField = false
+        for (legacyKey in legacyKeys) {
+            val value = inbound.opt(legacyKey) ?: continue
+            foundLegacyField = true
+            appendAddress(addresses, value)
+            inbound.remove(legacyKey)
+        }
+        if (foundLegacyField) inbound.put(currentKey, addresses)
     }
 
     private fun appendAddress(addresses: JSONArray, value: Any) {
         if (value is JSONArray) {
-            for (i in 0 until value.length()) addresses.put(value.get(i))
-        } else if (!addresses.toString().contains(value.toString())) {
+            for (i in 0 until value.length()) appendAddress(addresses, value.get(i))
+        } else if (value != JSONObject.NULL && (0 until addresses.length())
+                .none { addresses.opt(it) == value }) {
             addresses.put(value)
         }
+    }
+
+    private fun JSONArray.putAll(values: JSONArray) {
+        for (i in 0 until values.length()) put(values.get(i))
+    }
+
+    private fun prependInboundRules(config: JSONObject, inboundRules: JSONArray) {
+        if (inboundRules.length() == 0) return
+        val route = config.optJSONObject("route") ?: JSONObject()
+        val existingRules = route.optJSONArray("rules") ?: JSONArray()
+        val rules = JSONArray()
+        rules.putAll(inboundRules)
+        rules.putAll(existingRules)
+        route.put("rules", rules)
+        config.put("route", route)
     }
 
     private fun normalizeOutbound(outbound: JSONObject) {

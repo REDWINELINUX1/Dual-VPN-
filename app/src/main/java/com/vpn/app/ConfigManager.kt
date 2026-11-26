@@ -90,15 +90,19 @@ object ConfigManager {
                 put("inbounds", JSONArray().put(JSONObject().apply {
                     put("type", "tun")
                     put("tag", "tun-in")
-                    put("inet4_address", "172.19.0.1/30")
+                    put("address", JSONArray().put("172.19.0.1/30"))
                     put("auto_route", true)
                     put("strict_route", true)
                     put("stack", "system")
-                    put("sniff", true)
                 }))
                 put("outbounds", finalOutbounds)
                 put("route", JSONObject().apply {
-                    put("rules", JSONArray().put(JSONObject().put("protocol", "dns").put("action", "hijack-dns")))
+                    put(
+                        "rules",
+                        JSONArray()
+                            .put(JSONObject().put("action", "sniff"))
+                            .put(JSONObject().put("protocol", "dns").put("action", "hijack-dns"))
+                    )
                     put("auto_detect_interface", true)
                 })
             }

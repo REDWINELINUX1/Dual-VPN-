@@ -38,18 +38,22 @@ fun addTunAndDns(config: JSONObject) {
                 .put("mtu", 9000)
                 .put("auto_route", true)
                 .put("stack", "mixed")
-                .put("sniff", true)
         )
     )
 
     val route = config.optJSONObject("route") ?: JSONObject()
     val existingRules = route.optJSONArray("rules") ?: JSONArray()
     val rules = JSONArray()
+    var hasSniffRule = false
     var hasDnsHijackRule = false
     for (i in 0 until existingRules.length()) {
-        if (existingRules.optJSONObject(i)?.optString("action") == "hijack-dns") {
-            hasDnsHijackRule = true
+        when (existingRules.optJSONObject(i)?.optString("action")) {
+            "sniff" -> hasSniffRule = true
+            "hijack-dns" -> hasDnsHijackRule = true
         }
+    }
+    if (!hasSniffRule) {
+        rules.put(JSONObject().put("action", "sniff"))
     }
     if (!hasDnsHijackRule) {
         rules.put(JSONObject().put("protocol", "dns").put("action", "hijack-dns"))
