@@ -273,7 +273,7 @@ object ConfigNormalizer {
             if (server.optString("type") == "local") continue
 
             val detourType = outboundTypesByTag[detour]
-            if (detour.isBlank() || detourType == "direct" || detourType == null) {
+            if (detour.isBlank() || detourType == null) {
                 if (proxyFinal != null) server.put("detour", proxyFinal)
                 else server.remove("detour")
             }

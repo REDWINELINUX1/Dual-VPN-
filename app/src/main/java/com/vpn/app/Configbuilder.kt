@@ -570,7 +570,7 @@ suspend fun addManualConfig(context: Context, link: String): Result<Unit> {
             config.put("route", fixedRoute)
             config.put("outbounds", outbounds)
 
-            addTunAndDns(config, dnsDetour = "manual_node")
+            addTunAndDns(config, dnsDetour = "direct")
 
             ConfigNormalizer.normalizeConfig(config)
             val text = config.toString(4)

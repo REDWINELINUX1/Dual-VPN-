@@ -54,7 +54,7 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
                     val message = intent.getStringExtra(MyVpnService.EXTRA_LOG)
                         ?.takeIf { it.isNotBlank() }
                     if (message != null) {
-                        serviceLogs = (serviceLogs + message.takeLast(400)).takeLast(8)
+                        serviceLogs = (listOf(message.takeLast(800)) + serviceLogs).take(8)
                     }
                     return
                 }
@@ -240,7 +240,7 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
                             Text(
                                 text = serviceLogs.joinToString("\n"),
                                 style = MaterialTheme.typography.bodySmall,
-                                maxLines = 6,
+                                maxLines = 8,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }

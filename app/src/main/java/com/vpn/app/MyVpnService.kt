@@ -574,8 +574,8 @@ class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     }
 
     override fun writeDebugMessage(message: String) {
-        Log.d(TAG, message)
-        publishLog(message)
+        Log.i(TAG, "sing-box: $message")
+        publishLog("sing-box: $message")
     }
 
     override fun connectSSHAgent(): Int =
