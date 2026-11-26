@@ -56,7 +56,7 @@ private fun extractLinks(html: String): List<String> {
 
 private fun decode(s: String): String {
     return try {
-        URLDecoder.decode(s, "UTF-8")
+        URLDecoder.decode(s.replace("+", "%2B"), "UTF-8")
     } catch (e: Exception) {
         s
     }

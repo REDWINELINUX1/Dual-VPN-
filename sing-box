@@ -20,5 +20,10 @@ if [[ -z "${config_file}" ]]; then
 fi
 
 printf '[sing-box] running with config: %s\n' "$config_file"
-printf '[sing-box] core started successfully.\n'
-exit 0
+if [[ ! -f "${config_file}" ]]; then
+  printf '[sing-box] config file not found: %s\n' "${config_file}" >&2
+  exit 1
+fi
+
+printf '[sing-box] no sing-box core is installed; this wrapper cannot run a VPN.\n' >&2
+exit 127

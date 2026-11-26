@@ -19,13 +19,27 @@ import android.system.OsConstants
 import android.util.Log
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
-import io.nekohasekai.libbox.BoxService
+import io.nekohasekai.libbox.AutoRedirectHandler
+import io.nekohasekai.libbox.AutoRedirectSession
+import io.nekohasekai.libbox.BridgeOptions
+import io.nekohasekai.libbox.BridgeSession
+import io.nekohasekai.libbox.CommandServer
+import io.nekohasekai.libbox.CommandServerHandler
+import io.nekohasekai.libbox.ConnectionOwner
 import io.nekohasekai.libbox.InterfaceUpdateListener
 import io.nekohasekai.libbox.Libbox
+import io.nekohasekai.libbox.LocalDNSTransport
+import io.nekohasekai.libbox.NeighborUpdateListener
 import io.nekohasekai.libbox.NetworkInterfaceIterator
 import io.nekohasekai.libbox.Notification
+import io.nekohasekai.libbox.OverrideOptions
 import io.nekohasekai.libbox.PlatformInterface
+import io.nekohasekai.libbox.PlatformUser
+import io.nekohasekai.libbox.RoutePrefixIterator
+import io.nekohasekai.libbox.SetupOptions
+import io.nekohasekai.libbox.ShellSession
 import io.nekohasekai.libbox.StringIterator
+import io.nekohasekai.libbox.SystemProxyStatus
 import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.WIFIState
 import java.io.File
@@ -35,9 +49,11 @@ import java.net.NetworkInterface
 import java.util.concurrent.Executors
 import io.nekohasekai.libbox.NetworkInterface as LbNetworkInterface
 
-class MyVpnService : VpnService(), PlatformInterface {
+class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
-    private var box: BoxService? = null
+    private var box: CommandServer? = null
+    @Volatile
+    private var activeConfig: String? = null
     private val worker = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var netCallback: ConnectivityManager.NetworkCallback? = null
@@ -45,16 +61,20 @@ class MyVpnService : VpnService(), PlatformInterface {
     private var lastIface: Pair<String, Int>? = Pair("?", -2)
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForegroundService()
+        if (!startForegroundService()) {
+            publishStatus(STATUS_FAILED)
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+        publishStatus(STATUS_CONNECTING)
         worker.execute { startBox() }
         return START_STICKY
     }
 
-    private fun startForegroundService() {
-        val channelId = "dual_vpn_channel"
+    private fun startForegroundService(): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                channelId,
+                NOTIFICATION_CHANNEL_ID,
                 "Dual VPN Service",
                 NotificationManager.IMPORTANCE_LOW
             )
@@ -62,23 +82,27 @@ class MyVpnService : VpnService(), PlatformInterface {
             manager?.createNotificationChannel(channel)
         }
 
-        val notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("Dual VPN")
-            .setContentText("Connected")
-            .setSmallIcon(android.R.drawable.ic_lock_lock)
-            .setOngoing(true)
-            .build()
-
         try {
             if (Build.VERSION.SDK_INT >= 34) {
-                startForeground(1, notification, 0x40000000)
+                startForeground(
+                    1,
+                    buildForegroundNotification("Starting VPN"),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED
+                )
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+                startForeground(
+                    1,
+                    buildForegroundNotification("Starting VPN"),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+                )
             } else {
-                startForeground(1, notification)
+                startForeground(1, buildForegroundNotification("Starting VPN"))
             }
+            return true
         } catch (e: Exception) {
             Log.e(TAG, "startForeground failed", e)
+            toast("Could not start VPN foreground service")
+            return false
         }
     }
 
@@ -103,31 +127,54 @@ class MyVpnService : VpnService(), PlatformInterface {
             val configFile = File(filesDir, "config.json")
             if (!configFile.exists()) {
                 toast("config.json not found")
+                publishStatus(STATUS_FAILED)
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
                 return
             }
             val text = configFile.readText()
             if (!libReady) {
-                Libbox.setup(filesDir.path, filesDir.path, cacheDir.path, false)
+                val options = SetupOptions().apply {
+                    basePath = filesDir.path
+                    workingPath = filesDir.path
+                    tempPath = cacheDir.path
+                }
+                Libbox.setup(options)
                 libReady = true
             }
-            val service = Libbox.newService(text, this)
-            service.start()
-            box = service
+            activeConfig = text
+            val server = CommandServer(this, this)
+            box = server
+            server.start()
+            server.startOrReloadService(text, OverrideOptions())
+            getSystemService(NotificationManager::class.java)
+                ?.notify(NOTIFICATION_ID, buildForegroundNotification("Connected"))
+            publishStatus(STATUS_CONNECTED)
             toast("sing-box started")
         } catch (e: Throwable) {
             Log.e(TAG, "start failed", e)
             toast("Error: ${e.message}")
+            publishStatus(STATUS_FAILED)
             stopBox()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
         }
     }
 
     private fun stopBox() {
-        try {
-            box?.close()
-        } catch (e: Throwable) {
-            Log.e(TAG, "close failed", e)
-        }
+        val service = box
         box = null
+        try {
+            service?.closeService()
+        } catch (e: Throwable) {
+            Log.e(TAG, "close service failed", e)
+        }
+        try {
+            service?.close()
+        } catch (e: Throwable) {
+            Log.e(TAG, "close command server failed", e)
+        }
+        activeConfig = null
     }
 
     private fun toast(message: String) {
@@ -154,6 +201,10 @@ class MyVpnService : VpnService(), PlatformInterface {
             .setSession("Dual VPN")
             .setMtu(options.getMTU())
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            builder.setMetered(false)
+        }
+
         val inet4 = options.getInet4Address()
         while (inet4.hasNext()) {
             val a = inet4.next()
@@ -165,40 +216,46 @@ class MyVpnService : VpnService(), PlatformInterface {
             builder.addAddress(a.address(), a.prefix())
         }
 
-        if (options.getAutoRoute()) {
-            builder.addDnsServer(options.getDNSServerAddress())
-
-            val route4 = options.getInet4RouteAddress()
-            if (route4.hasNext()) {
-                while (route4.hasNext()) {
-                    val a = route4.next()
-                    builder.addRoute(a.address(), a.prefix())
+        val autoRoute = options.getAutoRoute()
+        val dnsMode = options.getDNSMode().getValue()
+        if (dnsMode != Libbox.DNSModeDisabled && (autoRoute || dnsMode.isNotEmpty())) {
+            val dnsServers = options.getDNSServerAddress()
+            while (dnsServers.hasNext()) {
+                val address = dnsServers.next()
+                builder.addDnsServer(address)
+                if (!autoRoute) {
+                    builder.addRoute(address, if (address.contains(':')) 128 else 32)
                 }
-            } else if (options.getInet4Address().hasNext()) {
-                builder.addRoute("0.0.0.0", 0)
             }
+        }
 
-            val route6 = options.getInet6RouteAddress()
-            if (route6.hasNext()) {
-                while (route6.hasNext()) {
-                    val a = route6.next()
-                    builder.addRoute(a.address(), a.prefix())
-                }
-            } else if (options.getInet6Address().hasNext()) {
-                builder.addRoute("::", 0)
-            }
-
+        if (autoRoute) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                val ex4 = options.getInet4RouteExcludeAddress()
-                while (ex4.hasNext()) {
-                    val a = ex4.next()
-                    builder.excludeRoute(IpPrefix(InetAddress.getByName(a.address()), a.prefix()))
+                val route4 = options.getInet4RouteAddress()
+                if (route4.hasNext()) {
+                    while (route4.hasNext()) {
+                        val address = route4.next()
+                        builder.addRoute(address.address(), address.prefix())
+                    }
+                } else if (options.getInet4Address().hasNext()) {
+                    builder.addRoute("0.0.0.0", 0)
                 }
-                val ex6 = options.getInet6RouteExcludeAddress()
-                while (ex6.hasNext()) {
-                    val a = ex6.next()
-                    builder.excludeRoute(IpPrefix(InetAddress.getByName(a.address()), a.prefix()))
+
+                val route6 = options.getInet6RouteAddress()
+                if (route6.hasNext()) {
+                    while (route6.hasNext()) {
+                        val address = route6.next()
+                        builder.addRoute(address.address(), address.prefix())
+                    }
+                } else if (options.getInet6Address().hasNext()) {
+                    builder.addRoute("::", 0)
                 }
+
+                addExcludedRoutes(builder, options.getInet4RouteExcludeAddress())
+                addExcludedRoutes(builder, options.getInet6RouteExcludeAddress())
+            } else {
+                addRoutes(builder, options.getInet4RouteRange())
+                addRoutes(builder, options.getInet6RouteRange())
             }
 
             val include = options.getIncludePackage()
@@ -229,8 +286,6 @@ class MyVpnService : VpnService(), PlatformInterface {
     }
 
     override fun usePlatformAutoDetectInterfaceControl(): Boolean = true
-
-    override fun usePlatformDefaultInterfaceMonitor(): Boolean = true
 
     override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener) {
         ifaceListener = listener
@@ -278,9 +333,9 @@ class MyVpnService : VpnService(), PlatformInterface {
         if (current == lastIface) return
         lastIface = current
         if (current == null) {
-            listener.updateDefaultInterface("", -1)
+            listener.updateDefaultInterface("", -1, false, false)
         } else {
-            listener.updateDefaultInterface(current.first, current.second)
+            listener.updateDefaultInterface(current.first, current.second, false, false)
         }
     }
 
@@ -311,8 +366,6 @@ class MyVpnService : VpnService(), PlatformInterface {
         return best
     }
 
-    override fun usePlatformInterfaceGetter(): Boolean = true
-
     override fun getInterfaces(): NetworkInterfaceIterator {
         val result = ArrayList<LbNetworkInterface>()
         val all = NetworkInterface.getNetworkInterfaces()
@@ -338,15 +391,13 @@ class MyVpnService : VpnService(), PlatformInterface {
         return InterfaceArray(result)
     }
 
-    override fun useProcFS(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
-
     override fun findConnectionOwner(
         ipProtocol: Int,
         sourceAddress: String,
         sourcePort: Int,
         destinationAddress: String,
         destinationPort: Int
-    ): Int {
+    ): ConnectionOwner {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             throw Exception("android: connection owner lookup needs Android 10")
         }
@@ -357,19 +408,12 @@ class MyVpnService : VpnService(), PlatformInterface {
             InetSocketAddress(destinationAddress, destinationPort)
         )
         if (uid == Process.INVALID_UID) throw Exception("android: connection owner not found")
-        return uid
-    }
-
-    override fun packageNameByUid(uid: Int): String {
-        return packageManager.getPackagesForUid(uid)?.firstOrNull()
+        val packages = packageManager.getPackagesForUid(uid)
             ?: throw Exception("android: package not found")
-    }
-
-    override fun uidByPackageName(packageName: String): Int {
-        return try {
-            packageManager.getPackageUid(packageName, 0)
-        } catch (e: Exception) {
-            throw Exception("android: package not found")
+        return ConnectionOwner().apply {
+            userId = uid
+            userName = packages.firstOrNull().orEmpty()
+            setAndroidPackageNames(StringArray(packages.toList()))
         }
     }
 
@@ -377,22 +421,124 @@ class MyVpnService : VpnService(), PlatformInterface {
 
     override fun underNetworkExtension(): Boolean = false
 
+    override fun localDNSTransport(): LocalDNSTransport? = null
+
     override fun readWIFIState(): WIFIState? = null
 
     override fun clearDNSCache() {
     }
 
     override fun sendNotification(notification: Notification) {
+        getSystemService(NotificationManager::class.java)?.notify(
+            notification.typeID,
+            NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+                .setContentTitle(notification.title)
+                .setContentText(notification.body)
+                .setSmallIcon(android.R.drawable.ic_lock_lock)
+                .build()
+        )
     }
 
-    override fun writeLog(message: String) {
-        Log.i("sing-box", message)
+    override fun cancelNotification(identifier: String, typeID: Int) {
+        getSystemService(NotificationManager::class.java)?.cancel(typeID)
+    }
+
+    override fun startNeighborMonitor(listener: NeighborUpdateListener) {
+        Log.w(TAG, "Neighbor monitoring is not supported on this platform")
+    }
+
+    override fun closeNeighborMonitor(listener: NeighborUpdateListener) {
+    }
+
+    override fun registerMyInterface(name: String) {
+    }
+
+    override fun usePlatformAutoRedirect(): Boolean = false
+
+    override fun createAutoRedirect(
+        options: ByteArray,
+        handler: AutoRedirectHandler
+    ): AutoRedirectSession = throw UnsupportedOperationException("Auto redirect is not supported")
+
+    override fun usePlatformBridge(): Boolean = false
+
+    override fun createBridge(options: BridgeOptions): BridgeSession =
+        throw UnsupportedOperationException("Bridge mode is not supported")
+
+    override fun usePlatformShell(): Boolean = false
+
+    override fun checkPlatformShell() {
+        throw UnsupportedOperationException("Platform shell is not supported")
+    }
+
+    override fun openShellSession(
+        user: PlatformUser,
+        command: String,
+        environ: StringIterator,
+        term: String,
+        rows: Int,
+        cols: Int
+    ): ShellSession = throw UnsupportedOperationException("Shell sessions are not supported")
+
+    override fun lookupSFTPServer(): String =
+        throw UnsupportedOperationException("SFTP is not supported")
+
+    override fun lookupUser(username: String): PlatformUser =
+        throw UnsupportedOperationException("Platform users are not supported")
+
+    override fun readSystemSSHHostKey(): String =
+        throw UnsupportedOperationException("SSH is not supported")
+
+    override fun tailscaleHostname(): String = "${Build.MANUFACTURER} ${Build.MODEL}"
+
+    override fun getSystemProxyStatus(): SystemProxyStatus =
+        SystemProxyStatus().apply { available = false }
+
+    override fun serviceReload() {
+        val config = activeConfig ?: throw IllegalStateException("No active VPN configuration")
+        box?.startOrReloadService(config, OverrideOptions())
+            ?: throw IllegalStateException("VPN command server is not running")
+    }
+
+    override fun serviceStop() {
+        publishStatus(STATUS_FAILED)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    override fun setSystemProxyEnabled(enabled: Boolean) {
+        if (enabled) throw UnsupportedOperationException("System proxy mode is not supported")
+    }
+
+    override fun writeDebugMessage(message: String) {
+        Log.d(TAG, message)
+    }
+
+    override fun connectSSHAgent(): Int =
+        throw UnsupportedOperationException("SSH agent is not supported")
+
+    override fun triggerNativeCrash() {
+        throw UnsupportedOperationException("Native crash testing is not supported")
+    }
+
+    private fun addRoutes(builder: Builder, routes: RoutePrefixIterator) {
+        while (routes.hasNext()) {
+            val route = routes.next()
+            builder.addRoute(route.address(), route.prefix())
+        }
+    }
+
+    private fun addExcludedRoutes(builder: Builder, routes: RoutePrefixIterator) {
+        while (routes.hasNext()) {
+            val route = routes.next()
+            builder.excludeRoute(IpPrefix(InetAddress.getByName(route.address()), route.prefix()))
+        }
     }
 
     private class StringArray(private val items: List<String>) : StringIterator {
         private var index = 0
         override fun hasNext(): Boolean = index < items.size
-        override fun len(): Long = items.size.toLong()
+        override fun len(): Int = items.size
         override fun next(): String = items[index++]
     }
 
@@ -404,8 +550,31 @@ class MyVpnService : VpnService(), PlatformInterface {
 
     companion object {
         private const val TAG = "DualVPN"
+        private const val NOTIFICATION_CHANNEL_ID = "dual_vpn_channel"
+        private const val NOTIFICATION_ID = 1
+        const val ACTION_STATUS = "com.vpn.app.VPN_STATUS"
+        const val EXTRA_STATUS = "status"
+        const val STATUS_CONNECTING = "connecting"
+        const val STATUS_CONNECTED = "connected"
+        const val STATUS_FAILED = "failed"
 
         @Volatile
         private var libReady = false
     }
+
+    private fun publishStatus(status: String) {
+        sendBroadcast(
+            Intent(ACTION_STATUS)
+                .setPackage(packageName)
+                .putExtra(EXTRA_STATUS, status)
+        )
+    }
+
+    private fun buildForegroundNotification(text: String) =
+        NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setContentTitle("Dual VPN")
+            .setContentText(text)
+            .setSmallIcon(android.R.drawable.ic_lock_lock)
+            .setOngoing(true)
+            .build()
 }

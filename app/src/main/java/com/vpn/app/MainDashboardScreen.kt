@@ -1,8 +1,10 @@
 package com.vpn.app
 
 import android.app.Activity
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.VpnService
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -19,6 +21,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
 
 @Composable
@@ -31,12 +34,30 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
     var manualLink by remember { mutableStateOf("") }
     val statusText = statusOverride ?: s.ready
 
-    // تابع استارت واقعی سرویس VPN برای نمایش آیکون در نوار بالا
+    DisposableEffect(context, s) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                statusOverride = when (intent?.getStringExtra(MyVpnService.EXTRA_STATUS)) {
+                    MyVpnService.STATUS_CONNECTING -> s.waitingVpn
+                    MyVpnService.STATUS_CONNECTED -> s.vpnConnected
+                    MyVpnService.STATUS_FAILED -> s.vpnNotDetected
+                    else -> statusOverride
+                }
+            }
+        }
+        ContextCompat.registerReceiver(
+            context,
+            receiver,
+            IntentFilter(MyVpnService.ACTION_STATUS),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+
     fun startVpnService() {
         val serviceIntent = Intent(context, MyVpnService::class.java)
-        context.startService(serviceIntent)
-        Toast.makeText(context, "VPN Activated & Running!", Toast.LENGTH_SHORT).show()
-        statusOverride = "VPN Connected"
+        ContextCompat.startForegroundService(context, serviceIntent)
+        statusOverride = s.waitingVpn
     }
 
     // راه‌انداز درخواست مجوز سیستم‌عامل

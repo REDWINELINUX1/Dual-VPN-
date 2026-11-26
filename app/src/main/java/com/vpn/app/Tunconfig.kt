@@ -40,16 +40,21 @@ fun addTunAndDns(config: JSONObject) {
         )
     )
 
-    val outbounds = config.getJSONArray("outbounds")
-    outbounds.put(JSONObject().put("type", "dns").put("tag", "dns-out"))
-
+    val route = config.optJSONObject("route") ?: JSONObject()
+    val existingRules = route.optJSONArray("rules") ?: JSONArray()
     val rules = JSONArray()
-        .put(JSONObject().put("protocol", "dns").put("outbound", "dns-out"))
-        .put(JSONObject().put("ip_is_private", true).put("outbound", "direct"))
-        .put(
-            JSONObject()
-                .put("domain_suffix", JSONArray().put(".ir"))
-                .put("outbound", "direct")
-        )
-    config.getJSONObject("route").put("rules", rules)
+    var hasDnsHijackRule = false
+    for (i in 0 until existingRules.length()) {
+        if (existingRules.optJSONObject(i)?.optString("action") == "hijack-dns") {
+            hasDnsHijackRule = true
+        }
+    }
+    if (!hasDnsHijackRule) {
+        rules.put(JSONObject().put("protocol", "dns").put("action", "hijack-dns"))
+    }
+    for (i in 0 until existingRules.length()) {
+        rules.put(existingRules.get(i))
+    }
+    route.put("rules", rules)
+    config.put("route", route)
 }

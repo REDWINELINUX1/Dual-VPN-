@@ -1,5 +1,6 @@
 use std::env;
 use std::process::Command;
+use std::process::exit;
 
 fn main() {
     println!("[Rust] Starting VPN Core Manager & Routing Injector...");
@@ -19,7 +20,14 @@ fn main() {
         .status();
 
     match status {
-        Ok(s) => println!("[Rust] sing-box exited with status: {}", s),
-        Err(e) => eprintln!("[Rust] Failed to start sing-box binary: {}", e),
+        Ok(s) if s.success() => println!("[Rust] sing-box exited with status: {}", s),
+        Ok(s) => {
+            eprintln!("[Rust] sing-box exited with status: {}", s);
+            exit(s.code().unwrap_or(1));
+        }
+        Err(e) => {
+            eprintln!("[Rust] Failed to start sing-box binary: {}", e);
+            exit(1);
+        }
     }
 }
