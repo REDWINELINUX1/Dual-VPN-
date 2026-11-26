@@ -60,15 +60,26 @@ class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     private var netCallback: ConnectivityManager.NetworkCallback? = null
     private var ifaceListener: InterfaceUpdateListener? = null
     private var lastIface: Pair<String, Int>? = Pair("?", -2)
+    private val operationLock = Any()
+    @Volatile
+    private var operationId = 0
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (!startForegroundService()) {
-            publishStatus(STATUS_FAILED)
-            stopSelf(startId)
+        if (intent?.action == ACTION_DISCONNECT) {
+            requestStop(startId)
             return START_NOT_STICKY
         }
-        publishStatus(STATUS_CONNECTING)
-        worker.execute { startBox() }
+        val operation: Int
+        synchronized(operationLock) {
+            operation = ++operationId
+            if (!startForegroundService()) {
+                publishStatus(STATUS_FAILED)
+                stopSelf(startId)
+                return START_NOT_STICKY
+            }
+            publishStatus(STATUS_CONNECTING)
+        }
+        worker.execute { startBox(operation, startId) }
         return START_STICKY
     }
 
@@ -109,7 +120,8 @@ class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         }
     }
 
-    private fun startBox() {
+    private fun startBox(operation: Int, startId: Int) {
+        if (operationId != operation) return
         stopBox()
         try {
             listOf("geoip.db", "geosite.db").forEach { fileName ->
@@ -131,9 +143,7 @@ class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             if (!configFile.exists()) {
                 val detail = "config.json not found"
                 toast(detail)
-                publishStatus(STATUS_FAILED, detail)
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
+                finishFailedStart(operation, startId, detail)
                 return
             }
             val text = ConfigNormalizer.normalizeConfig(
@@ -153,6 +163,10 @@ class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             box = server
             server.start()
             server.startOrReloadService(text, OverrideOptions())
+            if (operationId != operation) {
+                stopBox()
+                return
+            }
             getSystemService(NotificationManager::class.java)
                 ?.notify(NOTIFICATION_ID, buildForegroundNotification("Connected"))
             publishStatus(STATUS_CONNECTED)
@@ -161,10 +175,32 @@ class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             val detail = throwableMessage(e)
             Log.e(TAG, "start failed: $detail", e)
             toast("Error: $detail")
-            publishStatus(STATUS_FAILED, detail)
             stopBox()
+            finishFailedStart(operation, startId, detail)
+        }
+    }
+
+    private fun finishFailedStart(operation: Int, startId: Int, detail: String) {
+        synchronized(operationLock) {
+            if (operationId != operation) return
+            publishStatus(STATUS_FAILED, detail)
             stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            stopSelf(startId)
+        }
+    }
+
+    private fun requestStop(startId: Int? = null) {
+        val operation = synchronized(operationLock) {
+            (++operationId).also { publishStatus(STATUS_DISCONNECTED) }
+        }
+        worker.execute {
+            stopBox()
+            synchronized(operationLock) {
+                if (operationId == operation) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    if (startId == null) stopSelf() else stopSelf(startId)
+                }
+            }
         }
     }
 
@@ -522,9 +558,7 @@ class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     }
 
     override fun serviceStop() {
-        publishStatus(STATUS_FAILED)
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        requestStop()
     }
 
     override fun setSystemProxyEnabled(enabled: Boolean) {
@@ -575,13 +609,19 @@ class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         private const val NOTIFICATION_CHANNEL_ID = "dual_vpn_channel"
         private const val NOTIFICATION_ID = 1
         const val ACTION_STATUS = "com.vpn.app.VPN_STATUS"
+        const val ACTION_DISCONNECT = "com.vpn.app.DISCONNECT"
         const val EXTRA_STATUS = "status"
         const val EXTRA_ERROR = "error"
         const val EXTRA_LOG = "log"
         const val STATUS_CONNECTING = "connecting"
         const val STATUS_CONNECTED = "connected"
+        const val STATUS_DISCONNECTED = "disconnected"
         const val STATUS_FAILED = "failed"
         const val STATUS_LOG = "log"
+
+        @Volatile
+        var currentStatus: String = STATUS_DISCONNECTED
+            private set
 
         @Volatile
         private var libReady = false
@@ -591,6 +631,7 @@ class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         error.message?.takeIf { it.isNotBlank() } ?: error.toString()
 
     private fun publishStatus(status: String, error: String? = null) {
+        currentStatus = status
         sendBroadcast(
             Intent(ACTION_STATUS)
                 .setPackage(packageName)

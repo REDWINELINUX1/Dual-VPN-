@@ -30,11 +30,22 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var statusOverride by remember { mutableStateOf<String?>(null) }
+    var vpnActive by remember {
+        mutableStateOf(
+            MyVpnService.currentStatus == MyVpnService.STATUS_CONNECTING ||
+                MyVpnService.currentStatus == MyVpnService.STATUS_CONNECTED
+        )
+    }
     var serviceLogs by remember { mutableStateOf(emptyList<String>()) }
     var isLoading by remember { mutableStateOf(false) }
     var showManualDialog by remember { mutableStateOf(false) }
     var manualLink by remember { mutableStateOf("") }
-    val statusText = statusOverride ?: s.ready
+    val statusText = statusOverride ?: when (MyVpnService.currentStatus) {
+        MyVpnService.STATUS_CONNECTING -> s.waitingVpn
+        MyVpnService.STATUS_CONNECTED -> s.vpnConnected
+        MyVpnService.STATUS_DISCONNECTED -> s.vpnDisconnected
+        else -> s.ready
+    }
 
     DisposableEffect(context, s) {
         val receiver = object : BroadcastReceiver() {
@@ -47,13 +58,24 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
                     }
                     return
                 }
-                statusOverride = when (intent?.getStringExtra(MyVpnService.EXTRA_STATUS)) {
-                    MyVpnService.STATUS_CONNECTING -> s.waitingVpn
-                    MyVpnService.STATUS_CONNECTED -> s.vpnConnected
-                    MyVpnService.STATUS_FAILED ->
-                        intent.getStringExtra(MyVpnService.EXTRA_ERROR)?.let { "Error: $it" }
-                            ?: s.vpnNotDetected
-                    else -> statusOverride
+                when (intent?.getStringExtra(MyVpnService.EXTRA_STATUS)) {
+                    MyVpnService.STATUS_CONNECTING -> {
+                        vpnActive = true
+                        statusOverride = s.waitingVpn
+                    }
+                    MyVpnService.STATUS_CONNECTED -> {
+                        vpnActive = true
+                        statusOverride = s.vpnConnected
+                    }
+                    MyVpnService.STATUS_DISCONNECTED -> {
+                        vpnActive = false
+                        statusOverride = s.vpnDisconnected
+                    }
+                    MyVpnService.STATUS_FAILED -> {
+                        vpnActive = false
+                        statusOverride = intent.getStringExtra(MyVpnService.EXTRA_ERROR)
+                            ?.let { "Error: $it" } ?: s.vpnNotDetected
+                    }
                 }
             }
         }
@@ -91,6 +113,14 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
         } else {
             startVpnService()
         }
+    }
+
+    fun disconnectVpn() {
+        vpnActive = false
+        statusOverride = s.vpnDisconnected
+        context.startService(
+            Intent(context, MyVpnService::class.java).setAction(MyVpnService.ACTION_DISCONNECT)
+        )
     }
 
     // دیالوگ دریافت کانفیگ دستی
@@ -240,6 +270,26 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
                 ) {
                     Text(
                         text = s.buildConfig,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Button(
+                    onClick = { disconnectVpn() },
+                    enabled = vpnActive,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text(
+                        text = s.disconnect,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold
                     )
