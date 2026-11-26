@@ -67,7 +67,16 @@ object ConfigManager {
             val configJson = JSONObject().apply {
                 put("log", JSONObject().put("level", "info").put("timestamp", true))
                 put("dns", JSONObject().apply {
-                    put("servers", JSONArray().put(JSONObject().put("tag", "google-dns").put("address", "8.8.8.8").put("detour", "auto-select")))
+                    put(
+                        "servers",
+                        JSONArray().put(
+                            JSONObject()
+                                .put("type", "udp")
+                                .put("tag", "google-dns")
+                                .put("server", "8.8.8.8")
+                                .put("detour", "auto-select")
+                        )
+                    )
                     put("strategy", "ipv4_only")
                 })
                 put("inbounds", JSONArray().put(JSONObject().apply {

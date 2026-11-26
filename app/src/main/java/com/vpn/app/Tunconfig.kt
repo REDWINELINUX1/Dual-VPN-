@@ -7,14 +7,16 @@ fun addTunAndDns(config: JSONObject) {
     val dnsServers = JSONArray()
         .put(
             JSONObject()
+                .put("type", "https")
                 .put("tag", "remote")
-                .put("address", "https://1.1.1.1/dns-query")
+                .put("server", "1.1.1.1")
+                .put("path", "/dns-query")
                 .put("detour", "select")
         )
         .put(
             JSONObject()
+                .put("type", "local")
                 .put("tag", "local")
-                .put("address", "8.8.8.8")
         )
     val dnsRules = JSONArray()
         .put(JSONObject().put("outbound", "any").put("server", "local"))
