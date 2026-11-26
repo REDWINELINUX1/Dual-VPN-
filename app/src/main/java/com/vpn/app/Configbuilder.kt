@@ -409,6 +409,7 @@ suspend fun buildConfig(
 
             addTunAndDns(config)
 
+            ConfigNormalizer.normalizeConfig(config)
             val text = config.toString(4)
             File(context.filesDir, "config.json").writeText(text)
 
@@ -475,6 +476,7 @@ suspend fun addManualConfig(context: Context, link: String): Boolean {
 
             addTunAndDns(config)
 
+            ConfigNormalizer.normalizeConfig(config)
             val text = config.toString(4)
             File(context.filesDir, "config.json").writeText(text)
             saveToDownloads(context, "manual-vpn-config.json", text)

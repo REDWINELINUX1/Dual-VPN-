@@ -42,6 +42,7 @@ import io.nekohasekai.libbox.StringIterator
 import io.nekohasekai.libbox.SystemProxyStatus
 import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.WIFIState
+import org.json.JSONObject
 import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -101,7 +102,9 @@ class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             return true
         } catch (e: Exception) {
             Log.e(TAG, "startForeground failed", e)
-            toast("Could not start VPN foreground service")
+            val detail = throwableMessage(e)
+            toast("Could not start VPN foreground service: $detail")
+            publishStatus(STATUS_FAILED, detail)
             return false
         }
     }
@@ -126,13 +129,16 @@ class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
             val configFile = File(filesDir, "config.json")
             if (!configFile.exists()) {
-                toast("config.json not found")
-                publishStatus(STATUS_FAILED)
+                val detail = "config.json not found"
+                toast(detail)
+                publishStatus(STATUS_FAILED, detail)
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return
             }
-            val text = configFile.readText()
+            val text = ConfigNormalizer.normalizeConfig(
+                JSONObject(configFile.readText())
+            ).toString(4)
             if (!libReady) {
                 val options = SetupOptions().apply {
                     basePath = filesDir.path
@@ -152,9 +158,10 @@ class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             publishStatus(STATUS_CONNECTED)
             toast("sing-box started")
         } catch (e: Throwable) {
-            Log.e(TAG, "start failed", e)
-            toast("Error: ${e.message}")
-            publishStatus(STATUS_FAILED)
+            val detail = throwableMessage(e)
+            Log.e(TAG, "start failed: $detail", e)
+            toast("Error: $detail")
+            publishStatus(STATUS_FAILED, detail)
             stopBox()
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
@@ -495,9 +502,19 @@ class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         SystemProxyStatus().apply { available = false }
 
     override fun serviceReload() {
-        val config = activeConfig ?: throw IllegalStateException("No active VPN configuration")
-        box?.startOrReloadService(config, OverrideOptions())
-            ?: throw IllegalStateException("VPN command server is not running")
+        try {
+            val config = activeConfig ?: throw IllegalStateException("No active VPN configuration")
+            val normalized = ConfigNormalizer.normalizeJson(config)
+            activeConfig = normalized
+            box?.startOrReloadService(normalized, OverrideOptions())
+                ?: throw IllegalStateException("VPN command server is not running")
+        } catch (e: Throwable) {
+            val detail = throwableMessage(e)
+            Log.e(TAG, "reload failed: $detail", e)
+            publishStatus(STATUS_FAILED, detail)
+            toast("Reload error: $detail")
+            throw e
+        }
     }
 
     override fun serviceStop() {
@@ -554,6 +571,7 @@ class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         private const val NOTIFICATION_ID = 1
         const val ACTION_STATUS = "com.vpn.app.VPN_STATUS"
         const val EXTRA_STATUS = "status"
+        const val EXTRA_ERROR = "error"
         const val STATUS_CONNECTING = "connecting"
         const val STATUS_CONNECTED = "connected"
         const val STATUS_FAILED = "failed"
@@ -562,11 +580,17 @@ class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         private var libReady = false
     }
 
-    private fun publishStatus(status: String) {
+    private fun throwableMessage(error: Throwable): String =
+        error.message?.takeIf { it.isNotBlank() } ?: error.toString()
+
+    private fun publishStatus(status: String, error: String? = null) {
         sendBroadcast(
             Intent(ACTION_STATUS)
                 .setPackage(packageName)
                 .putExtra(EXTRA_STATUS, status)
+                .apply {
+                    if (!error.isNullOrBlank()) putExtra(EXTRA_ERROR, error)
+                }
         )
     }
 

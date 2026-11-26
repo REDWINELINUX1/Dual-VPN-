@@ -18,6 +18,14 @@ object ConfigManager {
                 rawContent
             }
 
+            val trimmedContent = decodedContent.trim()
+            if (trimmedContent.startsWith("{")) {
+                val configJson = ConfigNormalizer.normalizeConfig(JSONObject(trimmedContent))
+                val configFile = File(context.filesDir, "config.json")
+                configFile.writeText(configJson.toString(2))
+                return
+            }
+
             val lines = decodedContent.split("\n", "\r\n")
             val outboundsArray = JSONArray()
             val outboundTags = JSONArray()

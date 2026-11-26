@@ -40,7 +40,9 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
                 statusOverride = when (intent?.getStringExtra(MyVpnService.EXTRA_STATUS)) {
                     MyVpnService.STATUS_CONNECTING -> s.waitingVpn
                     MyVpnService.STATUS_CONNECTED -> s.vpnConnected
-                    MyVpnService.STATUS_FAILED -> s.vpnNotDetected
+                    MyVpnService.STATUS_FAILED ->
+                        intent.getStringExtra(MyVpnService.EXTRA_ERROR)?.let { "Error: $it" }
+                            ?: s.vpnNotDetected
                     else -> statusOverride
                 }
             }
