@@ -343,7 +343,12 @@ internal fun parseProxyLink(link: String, tag: String): JSONObject? {
 internal fun parseManualProxyLink(link: String, tag: String): JSONObject {
     require(link.isNotBlank()) { "Proxy link is empty" }
     val protocol = link.substringBefore("://").lowercase()
-    val normalizedLink = link.replaceFirst(Regex("^[a-zA-Z]+://")) { it.value.lowercase() }
+    val schemeSeparator = link.indexOf("://")
+    val normalizedLink = if (schemeSeparator >= 0) {
+        link.substring(0, schemeSeparator).lowercase() + link.substring(schemeSeparator)
+    } else {
+        link
+    }
     val node = when (protocol) {
         "vless" -> parseVless(normalizedLink, tag)
         "vmess" -> parseVmess(normalizedLink, tag)
