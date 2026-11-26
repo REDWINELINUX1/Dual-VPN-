@@ -520,6 +520,19 @@ suspend fun addManualConfig(context: Context, link: String): Result<Unit> {
             val input = link.trim()
             if (input.startsWith("{")) {
                 val config = ConfigNormalizer.normalizeConfig(JSONObject(input))
+                val outbounds = config.optJSONArray("outbounds") ?: JSONArray().also {
+                    config.put("outbounds", it)
+                }
+                val directOutbound = (0 until outbounds.length())
+                    .mapNotNull(outbounds::optJSONObject)
+                    .firstOrNull { it.optString("tag") == "direct" }
+                if (directOutbound == null) {
+                    outbounds.put(JSONObject().put("type", "direct").put("tag", "direct"))
+                } else {
+                    require(directOutbound.optString("type") == "direct") {
+                        "Outbound tag 'direct' must have type 'direct'"
+                    }
+                }
                 val text = config.toString(4)
                 File(context.filesDir, "config.json").writeText(text)
                 saveToDownloads(context, "manual-vpn-config.json", text)
@@ -557,7 +570,7 @@ suspend fun addManualConfig(context: Context, link: String): Result<Unit> {
             config.put("route", fixedRoute)
             config.put("outbounds", outbounds)
 
-            addTunAndDns(config, dnsDetour = "direct")
+            addTunAndDns(config, dnsDetour = "manual_node")
 
             ConfigNormalizer.normalizeConfig(config)
             val text = config.toString(4)

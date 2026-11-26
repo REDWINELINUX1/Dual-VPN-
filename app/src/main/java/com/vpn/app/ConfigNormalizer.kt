@@ -257,18 +257,24 @@ object ConfigNormalizer {
         }
 
         val outbounds = config.optJSONArray("outbounds") ?: return
-        val outboundTags = (0 until outbounds.length())
+        val outboundTypesByTag = (0 until outbounds.length())
             .mapNotNull(outbounds::optJSONObject)
-            .map { it.optString("tag") }
-            .toSet()
+            .associate { it.optString("tag") to it.optString("type") }
         val proxyFinal = route.optString("final")
+            .takeIf { tag ->
+                tag.isNotBlank() &&
+                    outboundTypesByTag[tag]?.let {
+                        it !in setOf("direct", "block", "dns", "url")
+                    } == true
+            }
         for (i in 0 until servers.length()) {
             val server = servers.optJSONObject(i) ?: continue
             val detour = server.optString("detour")
-            if (detour.isBlank() && server.optString("type") != "local") {
-                if (proxyFinal.isNotBlank()) server.put("detour", proxyFinal)
-            } else if (detour.isNotBlank() && detour !in outboundTags) {
-                if (proxyFinal.isNotBlank()) server.put("detour", proxyFinal)
+            if (server.optString("type") == "local") continue
+
+            val detourType = outboundTypesByTag[detour]
+            if (detour.isBlank() || detourType == "direct" || detourType == null) {
+                if (proxyFinal != null) server.put("detour", proxyFinal)
                 else server.remove("detour")
             }
         }
