@@ -7,13 +7,29 @@ import java.net.URI
 object ConfigNormalizer {
 
     fun normalizeConfig(config: JSONObject): JSONObject {
+        ensureLogging(config)
         normalizeDnsServers(config.optJSONObject("dns"))
         val inboundRules = normalizeArrayObjects(config.optJSONArray("inbounds"), "inbound")
         normalizeArrayObjects(config.optJSONArray("outbounds"), "outbound")
-        normalizeRoute(config.optJSONObject("route"))
+        ensureTun(config)
+        val route = config.optJSONObject("route") ?: JSONObject()
+        normalizeRoute(route)
+        ensureProxyRoute(config, route)
+        ensureDns(config, route)
+        ensureDnsHijackRule(route)
+        route.put("auto_detect_interface", true)
+        config.put("route", route)
         prependInboundRules(config, inboundRules)
         normalizeExperimental(config.optJSONObject("experimental"))
         return config
+    }
+
+    private fun ensureLogging(config: JSONObject) {
+        val log = config.optJSONObject("log") ?: JSONObject()
+        log.put("disabled", false)
+        if (log.optString("level").isBlank()) log.put("level", "info")
+        if (!log.has("timestamp")) log.put("timestamp", true)
+        config.put("log", log)
     }
 
     fun normalize(json: JSONObject): JSONObject = normalizeConfig(json)
@@ -76,6 +92,204 @@ object ConfigNormalizer {
                 else -> setUdpServer(server, address)
             }
             server.remove("address")
+        }
+    }
+
+    private fun ensureTun(config: JSONObject) {
+        val inbounds = config.optJSONArray("inbounds") ?: JSONArray().also {
+            config.put("inbounds", it)
+        }
+        val tun = (0 until inbounds.length())
+            .mapNotNull(inbounds::optJSONObject)
+            .firstOrNull { it.optString("type") == "tun" }
+            ?: JSONObject()
+                .put("type", "tun")
+                .put("tag", "tun-in")
+                .put("address", JSONArray().put("172.19.0.1/30"))
+                .also(inbounds::put)
+        if (!tun.has("address")) tun.put("address", JSONArray().put("172.19.0.1/30"))
+        tun.put("auto_route", true)
+        tun.put("strict_route", true)
+    }
+
+    private fun ensureProxyRoute(config: JSONObject, route: JSONObject) {
+        val outbounds = config.optJSONArray("outbounds") ?: JSONArray().also {
+            config.put("outbounds", it)
+        }
+        val tags = mutableSetOf<String>()
+        val proxyTags = mutableListOf<String>()
+        val nonProxyTags = mutableSetOf<String>()
+
+        for (i in 0 until outbounds.length()) {
+            val outbound = outbounds.optJSONObject(i) ?: continue
+            val type = outbound.optString("type")
+            if (type.isBlank()) continue
+            var tag = outbound.optString("tag").trim()
+            if (tag.isEmpty()) {
+                tag = "outbound-$i"
+                outbound.put("tag", tag)
+            }
+            require(tags.add(tag)) { "Duplicate outbound tag: $tag" }
+            if (type !in setOf("direct", "block", "dns", "selector", "urltest", "url")) {
+                proxyTags.add(tag)
+            } else if (type in setOf("direct", "block", "dns")) {
+                nonProxyTags.add(tag)
+            }
+        }
+
+        for (i in 0 until outbounds.length()) {
+            val outbound = outbounds.optJSONObject(i) ?: continue
+            if (outbound.optString("type") in setOf("selector", "urltest")) {
+                normalizeGroup(outbound, tags, proxyTags, nonProxyTags)
+            }
+        }
+
+        if (proxyTags.isEmpty()) return
+
+        fun canProxy(tag: String, visiting: MutableSet<String> = mutableSetOf()): Boolean {
+            if (tag in proxyTags) return true
+            if (!visiting.add(tag)) return false
+            val group = (0 until outbounds.length())
+                .asSequence()
+                .mapNotNull(outbounds::optJSONObject)
+                .firstOrNull { it.optString("tag") == tag } ?: return false
+            if (group.optString("type") !in setOf("selector", "urltest")) return false
+            val members = group.optJSONArray("outbounds") ?: return false
+            return (0 until members.length()).any {
+                canProxy(members.optString(it), visiting)
+            }
+        }
+
+        val currentFinal = route.optString("final")
+        if (currentFinal.isNotBlank() && canProxy(currentFinal)) return
+
+        val groups = (0 until outbounds.length())
+            .mapNotNull(outbounds::optJSONObject)
+            .filter { it.optString("type") in setOf("selector", "urltest") }
+        val preferredGroup = groups.firstOrNull {
+            it.optString("tag") == currentFinal && canProxy(currentFinal)
+        } ?: groups.firstOrNull {
+            it.optString("type") == "selector" && canProxy(it.optString("tag"))
+        } ?: groups.firstOrNull {
+            it.optString("type") == "urltest" && canProxy(it.optString("tag"))
+        }
+
+        if (preferredGroup != null) {
+            route.put("final", preferredGroup.optString("tag"))
+        } else if (proxyTags.size == 1) {
+            route.put("final", proxyTags.first())
+        } else {
+            var groupTag = "auto-select"
+            var suffix = 1
+            while (groupTag in tags) groupTag = "auto-select-${suffix++}"
+            val members = JSONArray()
+            proxyTags.forEach(members::put)
+            outbounds.put(
+                JSONObject()
+                    .put("type", "urltest")
+                    .put("tag", groupTag)
+                    .put("outbounds", members)
+                    .put("url", "https://www.gstatic.com/generate_204")
+                    .put("interval", "3m")
+                    .put("tolerance", 50)
+            )
+            route.put("final", groupTag)
+        }
+    }
+
+    private fun normalizeGroup(
+        group: JSONObject,
+        existingTags: Set<String>,
+        proxyTags: List<String>,
+        nonProxyTags: Set<String>
+    ) {
+        val members = group.optJSONArray("outbounds") ?: JSONArray()
+        val validMembers = JSONArray()
+        val seen = mutableSetOf<String>()
+        for (i in 0 until members.length()) {
+            val tag = members.optString(i)
+            if (tag in existingTags && seen.add(tag)) validMembers.put(tag)
+        }
+        val hasProxyMember = (0 until validMembers.length())
+            .any { validMembers.optString(it) in proxyTags }
+        if (!hasProxyMember) proxyTags.forEach(validMembers::put)
+        group.put("outbounds", validMembers)
+
+        if (group.optString("type") == "selector") {
+            val default = group.optString("default")
+            val defaultIsMember = (0 until validMembers.length())
+                .any { validMembers.optString(it) == default }
+            if (!defaultIsMember || default in nonProxyTags) {
+                proxyTags.firstOrNull()?.let { group.put("default", it) }
+            }
+        }
+    }
+
+    private fun ensureDns(config: JSONObject, route: JSONObject) {
+        val dns = config.optJSONObject("dns") ?: JSONObject().also {
+            config.put("dns", it)
+        }
+        val servers = dns.optJSONArray("servers") ?: JSONArray().also {
+            dns.put("servers", it)
+        }
+        if (servers.length() == 0) {
+            servers.put(
+                JSONObject()
+                    .put("type", "udp")
+                    .put("tag", "remote-dns")
+                    .put("server", "1.1.1.1")
+                    .put("server_port", 53)
+            )
+        }
+        if (!dns.has("strategy")) dns.put("strategy", "ipv4_only")
+
+        val serverTags = mutableSetOf<String>()
+        for (i in 0 until servers.length()) {
+            val server = servers.optJSONObject(i) ?: continue
+            if (!server.has("tag")) server.put("tag", "dns-$i")
+            serverTags.add(server.optString("tag"))
+        }
+        if (serverTags.isEmpty()) {
+            throw IllegalArgumentException("DNS configuration has no valid servers")
+        }
+        if (dns.optString("final") !in serverTags) {
+            dns.put("final", serverTags.first())
+        }
+
+        val outbounds = config.optJSONArray("outbounds") ?: return
+        val outboundTags = (0 until outbounds.length())
+            .mapNotNull(outbounds::optJSONObject)
+            .map { it.optString("tag") }
+            .toSet()
+        val proxyFinal = route.optString("final")
+        for (i in 0 until servers.length()) {
+            val server = servers.optJSONObject(i) ?: continue
+            val detour = server.optString("detour")
+            if (detour.isBlank() && server.optString("type") != "local") {
+                if (proxyFinal.isNotBlank()) server.put("detour", proxyFinal)
+            } else if (detour.isNotBlank() && detour !in outboundTags) {
+                if (proxyFinal.isNotBlank()) server.put("detour", proxyFinal)
+                else server.remove("detour")
+            }
+        }
+    }
+
+    private fun ensureDnsHijackRule(route: JSONObject) {
+        val rules = route.optJSONArray("rules") ?: JSONArray().also {
+            route.put("rules", it)
+        }
+        var hijackRule: JSONObject? = null
+        for (i in 0 until rules.length()) {
+            val rule = rules.optJSONObject(i) ?: continue
+            if (rule.optString("action") == "hijack-dns") {
+                hijackRule = rule
+                break
+            }
+        }
+        if (hijackRule == null) {
+            rules.put(0, JSONObject().put("port", 53).put("action", "hijack-dns"))
+        } else if (hijackRule.optInt("port", -1) != 53) {
+            hijackRule.put("port", 53)
         }
     }
 
@@ -305,8 +519,7 @@ object ConfigNormalizer {
         renameKey(outbound, "plugin", "plugin")
     }
 
-    private fun normalizeRoute(route: JSONObject?) {
-        if (route == null) return
+    private fun normalizeRoute(route: JSONObject) {
         val rules = route.optJSONArray("rules") ?: return
         for (i in 0 until rules.length()) {
             val rule = rules.optJSONObject(i) ?: continue

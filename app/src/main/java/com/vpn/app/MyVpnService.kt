@@ -289,7 +289,11 @@ class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     }
 
     override fun autoDetectInterfaceControl(fd: Int) {
-        protect(fd)
+        if (!protect(fd)) {
+            val detail = "android: failed to protect sing-box outbound socket"
+            publishStatus(STATUS_FAILED, detail)
+            throw Exception(detail)
+        }
     }
 
     override fun usePlatformAutoDetectInterfaceControl(): Boolean = true
@@ -529,6 +533,7 @@ class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     override fun writeDebugMessage(message: String) {
         Log.d(TAG, message)
+        publishLog(message)
     }
 
     override fun connectSSHAgent(): Int =
@@ -572,9 +577,11 @@ class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         const val ACTION_STATUS = "com.vpn.app.VPN_STATUS"
         const val EXTRA_STATUS = "status"
         const val EXTRA_ERROR = "error"
+        const val EXTRA_LOG = "log"
         const val STATUS_CONNECTING = "connecting"
         const val STATUS_CONNECTED = "connected"
         const val STATUS_FAILED = "failed"
+        const val STATUS_LOG = "log"
 
         @Volatile
         private var libReady = false
@@ -591,6 +598,16 @@ class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 .apply {
                     if (!error.isNullOrBlank()) putExtra(EXTRA_ERROR, error)
                 }
+        )
+    }
+
+    private fun publishLog(message: String) {
+        if (message.isBlank()) return
+        sendBroadcast(
+            Intent(ACTION_STATUS)
+                .setPackage(packageName)
+                .putExtra(EXTRA_STATUS, STATUS_LOG)
+                .putExtra(EXTRA_LOG, message)
         )
     }
 

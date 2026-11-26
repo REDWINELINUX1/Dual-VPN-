@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -29,6 +30,7 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var statusOverride by remember { mutableStateOf<String?>(null) }
+    var serviceLogs by remember { mutableStateOf(emptyList<String>()) }
     var isLoading by remember { mutableStateOf(false) }
     var showManualDialog by remember { mutableStateOf(false) }
     var manualLink by remember { mutableStateOf("") }
@@ -37,6 +39,14 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
     DisposableEffect(context, s) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.getStringExtra(MyVpnService.EXTRA_STATUS) == MyVpnService.STATUS_LOG) {
+                    val message = intent.getStringExtra(MyVpnService.EXTRA_LOG)
+                        ?.takeIf { it.isNotBlank() }
+                    if (message != null) {
+                        serviceLogs = (serviceLogs + message.takeLast(400)).takeLast(8)
+                    }
+                    return
+                }
                 statusOverride = when (intent?.getStringExtra(MyVpnService.EXTRA_STATUS)) {
                     MyVpnService.STATUS_CONNECTING -> s.waitingVpn
                     MyVpnService.STATUS_CONNECTED -> s.vpnConnected
@@ -90,13 +100,16 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
             title = { Text("Add Manual Config") },
             text = {
                 Column {
-                    Text("Paste your VLESS, VMess, Trojan, or SS link below:", fontSize = 14.sp)
+                    Text(
+                        "Paste a proxy link or full sing-box JSON configuration:",
+                        fontSize = 14.sp
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = manualLink,
                         onValueChange = { manualLink = it },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("vless://...") },
+                        placeholder = { Text("vless://... or { ... }") },
                         maxLines = 4
                     )
                 }
@@ -185,6 +198,16 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium
                         )
+
+                        if (serviceLogs.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = serviceLogs.joinToString("\n"),
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 6,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
 
                         if (isLoading) {
                             Spacer(modifier = Modifier.height(12.dp))

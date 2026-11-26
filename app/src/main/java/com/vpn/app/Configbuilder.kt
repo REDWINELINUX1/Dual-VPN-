@@ -259,7 +259,7 @@ private fun parseSs(link: String, tag: String): JSONObject? {
     return o
 }
 
-private fun parseLink(link: String, tag: String): JSONObject? {
+internal fun parseProxyLink(link: String, tag: String): JSONObject? {
     return try {
         when {
             link.startsWith("vless://") -> parseVless(link, tag)
@@ -330,7 +330,7 @@ suspend fun buildConfig(
                 for (link in links) {
                     if (nodes.length() >= MAX_NODES) break
                     val tag = "${channel}_n${nodes.length()}"
-                    val node = parseLink(link, tag) ?: continue
+                    val node = parseProxyLink(link, tag) ?: continue
 
                     val key = node.getString("type") + "|" + node.getString("server") + "|" +
                             node.getInt("server_port") + "|" +
@@ -431,7 +431,17 @@ suspend fun buildConfig(
 suspend fun addManualConfig(context: Context, link: String): Boolean {
     return withContext(Dispatchers.IO) {
         try {
-            val node = parseLink(link.trim(), "manual_node") ?: return@withContext false
+            val input = link.trim()
+            if (input.startsWith("{")) {
+                val config = ConfigNormalizer.normalizeConfig(JSONObject(input))
+                val text = config.toString(4)
+                File(context.filesDir, "config.json").writeText(text)
+                saveToDownloads(context, "manual-vpn-config.json", text)
+                return@withContext true
+            }
+
+            val node = parseProxyLink(input, "manual_node")
+                ?: return@withContext false
 
             val config = JSONObject()
             config.put("log", JSONObject().put("disabled", false).put("level", "info").put("timestamp", true))
