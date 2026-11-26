@@ -151,15 +151,21 @@ fun MainDashboardScreen(s: Strings, onOpenSettings: () -> Unit) {
                             isLoading = true
                             showManualDialog = false
                             coroutineScope.launch {
-                                val success = addManualConfig(context, manualLink)
+                                val result = addManualConfig(context, manualLink)
                                 isLoading = false
-                                if (success) {
-                                    Toast.makeText(context, "Manual config applied!", Toast.LENGTH_SHORT).show()
-                                    statusOverride = "Manual Config Active"
-                                    triggerVpnConnection()
-                                } else {
-                                    Toast.makeText(context, "Invalid link format!", Toast.LENGTH_SHORT).show()
-                                }
+                                result.fold(
+                                    onSuccess = {
+                                        Toast.makeText(context, "Manual config applied!", Toast.LENGTH_SHORT).show()
+                                        statusOverride = "Manual Config Active"
+                                        triggerVpnConnection()
+                                    },
+                                    onFailure = { error ->
+                                        val detail = error.localizedMessage
+                                            ?.takeIf { it.isNotBlank() } ?: error.toString()
+                                        statusOverride = "Error: $detail"
+                                        Toast.makeText(context, "Manual config error: $detail", Toast.LENGTH_LONG).show()
+                                    }
+                                )
                                 manualLink = ""
                             }
                         }

@@ -104,7 +104,7 @@ private fun applyTlsAndTransport(
     host: String,
     defaultTls: Boolean
 ): Boolean {
-    val security = p["security"] ?: (if (defaultTls) "tls" else "none")
+    val security = (p["security"] ?: (if (defaultTls) "tls" else "none")).lowercase()
     if (security == "tls" || security == "reality") {
         val tls = JSONObject()
         tls.put("enabled", true)
@@ -133,9 +133,9 @@ private fun applyTlsAndTransport(
         return false
     }
 
-    if (p["headerType"] == "http") return false
+    if (p["headerType"].equals("http", ignoreCase = true)) return false
 
-    when (p["type"]) {
+    when (p["type"]?.lowercase()) {
         null, "", "tcp" -> {}
         "ws" -> {
             val t = JSONObject()
@@ -165,8 +165,16 @@ private fun applyTlsAndTransport(
 }
 
 private fun parseVless(link: String, tag: String): JSONObject? {
-    val u = splitUri(link) ?: return null
-    if (u.user.isEmpty() || u.port !in 1..65535) return null
+    val u = splitUri(link)
+        ?: throw IllegalArgumentException("Malformed VLESS link: expected vless://uuid@host:port")
+    if (u.user.isEmpty()) throw IllegalArgumentException("VLESS UUID is missing")
+    if (u.port !in 1..65535) {
+        throw IllegalArgumentException("VLESS server port must be between 1 and 65535")
+    }
+    val encryption = u.params["encryption"]
+    if (encryption != null && !encryption.equals("none", ignoreCase = true)) {
+        throw IllegalArgumentException("Unsupported VLESS encryption: $encryption (only none is supported)")
+    }
     val o = JSONObject()
     o.put("type", "vless")
     o.put("tag", tag)
@@ -175,7 +183,9 @@ private fun parseVless(link: String, tag: String): JSONObject? {
     o.put("uuid", u.user)
     val flow = u.params["flow"]
     if (!flow.isNullOrEmpty()) o.put("flow", flow)
-    if (!applyTlsAndTransport(o, u.params, u.host, false)) return null
+    if (!applyTlsAndTransport(o, u.params, u.host, false)) {
+        throw IllegalArgumentException("Unsupported VLESS security or transport parameters")
+    }
     return o
 }
 
@@ -271,6 +281,18 @@ internal fun parseProxyLink(link: String, tag: String): JSONObject? {
     } catch (e: Exception) {
         null
     }
+}
+
+internal fun parseManualProxyLink(link: String, tag: String): JSONObject {
+    val protocol = link.substringBefore("://").lowercase()
+    val node = when (protocol) {
+        "vless" -> parseVless(link, tag)
+        "vmess" -> parseVmess(link, tag)
+        "trojan" -> parseTrojan(link, tag)
+        "ss" -> parseSs(link, tag)
+        else -> throw IllegalArgumentException("Unsupported proxy link: $protocol")
+    }
+    return node ?: throw IllegalArgumentException("Invalid $protocol link or unsupported parameters")
 }
 
 private fun saveToDownloads(context: Context, name: String, text: String): Boolean {
@@ -428,7 +450,7 @@ suspend fun buildConfig(
     }
 }
 
-suspend fun addManualConfig(context: Context, link: String): Boolean {
+suspend fun addManualConfig(context: Context, link: String): Result<Unit> {
     return withContext(Dispatchers.IO) {
         try {
             val input = link.trim()
@@ -437,28 +459,15 @@ suspend fun addManualConfig(context: Context, link: String): Boolean {
                 val text = config.toString(4)
                 File(context.filesDir, "config.json").writeText(text)
                 saveToDownloads(context, "manual-vpn-config.json", text)
-                return@withContext true
+                return@withContext Result.success(Unit)
             }
 
-            val node = parseProxyLink(input, "manual_node")
-                ?: return@withContext false
+            val node = parseManualProxyLink(input, "manual_node")
 
             val config = JSONObject()
             config.put("log", JSONObject().put("disabled", false).put("level", "info").put("timestamp", true))
 
             val outbounds = JSONArray()
-
-            val selectorList = JSONArray()
-            selectorList.put("manual_node")
-            selectorList.put("direct")
-
-            val selector = JSONObject()
-            selector.put("type", "selector")
-            selector.put("tag", "select")
-            selector.put("outbounds", selectorList)
-            selector.put("default", "manual_node")
-            outbounds.put(selector)
-
             outbounds.put(JSONObject().put("type", "direct").put("tag", "direct"))
             outbounds.put(node)
 
@@ -478,7 +487,7 @@ suspend fun addManualConfig(context: Context, link: String): Boolean {
             )
             val fixedRoute = JSONObject()
             fixedRoute.put("rules", fixedRules)
-            fixedRoute.put("final", "select")
+            fixedRoute.put("final", "manual_node")
             fixedRoute.put("auto_detect_interface", true)
 
             config.put("route", fixedRoute)
@@ -490,9 +499,9 @@ suspend fun addManualConfig(context: Context, link: String): Boolean {
             val text = config.toString(4)
             File(context.filesDir, "config.json").writeText(text)
             saveToDownloads(context, "manual-vpn-config.json", text)
-            true
+            Result.success(Unit)
         } catch (e: Exception) {
-            false
+            Result.failure(e)
         }
     }
 }
