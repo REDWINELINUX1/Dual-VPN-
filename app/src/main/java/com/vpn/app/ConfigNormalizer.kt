@@ -143,6 +143,7 @@ object ConfigNormalizer {
         val generatedRules = JSONArray()
         val type = inbound.optString("type")
         if (type == "tun") {
+            inbound.remove("stack")
             mergeLegacyAddressFields(
                 inbound,
                 "address",

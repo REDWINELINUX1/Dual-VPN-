@@ -93,7 +93,6 @@ object ConfigManager {
                     put("address", JSONArray().put("172.19.0.1/30"))
                     put("auto_route", true)
                     put("strict_route", true)
-                    put("stack", "system")
                 }))
                 put("outbounds", finalOutbounds)
                 put("route", JSONObject().apply {

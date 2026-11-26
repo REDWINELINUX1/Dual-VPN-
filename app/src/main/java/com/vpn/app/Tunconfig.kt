@@ -37,7 +37,6 @@ fun addTunAndDns(config: JSONObject) {
                 .put("address", JSONArray().put("172.19.0.1/30"))
                 .put("mtu", 9000)
                 .put("auto_route", true)
-                .put("stack", "mixed")
         )
     )
 
