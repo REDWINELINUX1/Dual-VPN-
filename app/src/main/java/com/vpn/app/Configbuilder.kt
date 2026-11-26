@@ -103,16 +103,28 @@ private fun applyTlsAndTransport(
     p: Map<String, String>,
     host: String,
     defaultTls: Boolean
-): Boolean {
-    val security = (p["security"] ?: (if (defaultTls) "tls" else "none")).lowercase()
+) {
+    val security = (p["security"] ?: (if (defaultTls) "tls" else "none"))
+        .trim()
+        .lowercase()
     if (security == "tls" || security == "reality") {
         val tls = JSONObject()
         tls.put("enabled", true)
-        tls.put("server_name", p["sni"] ?: p["peer"] ?: p["host"] ?: host)
-        if (p["allowInsecure"] == "1" || p["insecure"] == "1") tls.put("insecure", true)
+        val serverName = sequenceOf(p["sni"], p["peer"], p["host"], host)
+            .firstOrNull { !it.isNullOrBlank() }
+        if (serverName != null) tls.put("server_name", serverName)
+        if (
+            listOf(p["allowInsecure"], p["allow_insecure"], p["insecure"])
+                .any { it == "1" || it.equals("true", ignoreCase = true) }
+        ) {
+            tls.put("insecure", true)
+        }
         val alpn = p["alpn"]
-        if (!alpn.isNullOrEmpty()) tls.put("alpn", JSONArray(alpn.split(",")))
-        val fp = p["fp"]
+            ?.split(",")
+            ?.map(String::trim)
+            ?.filter(String::isNotEmpty)
+        if (!alpn.isNullOrEmpty()) tls.put("alpn", JSONArray(alpn))
+        val fp = p["fp"]?.takeIf(String::isNotBlank)?.trim()
         if (!fp.isNullOrEmpty() || security == "reality") {
             val utls = JSONObject()
             utls.put("enabled", true)
@@ -120,23 +132,36 @@ private fun applyTlsAndTransport(
             tls.put("utls", utls)
         }
         if (security == "reality") {
-            val pbk = p["pbk"]
-            if (pbk.isNullOrEmpty()) return false
+            val pbk = p["pbk"] ?: p["publicKey"] ?: p["public_key"]
+            require(!pbk.isNullOrBlank()) {
+                "Reality security requires the pbk (public key) parameter"
+            }
             val reality = JSONObject()
             reality.put("enabled", true)
             reality.put("public_key", pbk)
-            reality.put("short_id", p["sid"] ?: "")
+            reality.put("short_id", p["sid"] ?: p["shortId"] ?: p["short_id"] ?: "")
             tls.put("reality", reality)
         }
         o.put("tls", tls)
     } else if (security != "none") {
-        return false
+        throw IllegalArgumentException("Unsupported security type: $security")
+    } else {
+        require(
+            sequenceOf(
+                "sni", "peer", "fp", "alpn", "pbk", "publicKey", "public_key",
+                "sid", "shortId", "short_id",
+                "allowInsecure", "allow_insecure", "insecure"
+            )
+                .none { !p[it].isNullOrBlank() }
+        ) { "TLS parameters were provided while security is set to none" }
     }
 
-    if (p["headerType"].equals("http", ignoreCase = true)) return false
+    require(!p["headerType"].equals("http", ignoreCase = true)) {
+        "Legacy HTTP header obfuscation is unsupported by sing-box"
+    }
 
-    when (p["type"]?.lowercase()) {
-        null, "", "tcp" -> {}
+    when (p["type"]?.trim()?.lowercase()) {
+        null, "", "tcp", "raw" -> {}
         "ws" -> {
             val t = JSONObject()
             t.put("type", "ws")
@@ -145,10 +170,18 @@ private fun applyTlsAndTransport(
             if (!h.isNullOrEmpty()) t.put("headers", JSONObject().put("Host", h))
             o.put("transport", t)
         }
+        "http", "h2" -> {
+            val t = JSONObject()
+            t.put("type", "http")
+            t.put("path", p["path"] ?: "/")
+            val h = p["host"]?.split(",")?.map(String::trim)?.filter(String::isNotEmpty)
+            if (!h.isNullOrEmpty()) t.put("host", JSONArray(h))
+            o.put("transport", t)
+        }
         "grpc" -> {
             val t = JSONObject()
             t.put("type", "grpc")
-            t.put("service_name", p["serviceName"] ?: "")
+            t.put("service_name", p["serviceName"] ?: p["service_name"] ?: "")
             o.put("transport", t)
         }
         "httpupgrade" -> {
@@ -159,9 +192,8 @@ private fun applyTlsAndTransport(
             if (!h.isNullOrEmpty()) t.put("host", h)
             o.put("transport", t)
         }
-        else -> return false
+        else -> throw IllegalArgumentException("Unsupported transport type: ${p["type"]}")
     }
-    return true
 }
 
 private fun parseVless(link: String, tag: String): JSONObject? {
@@ -181,36 +213,55 @@ private fun parseVless(link: String, tag: String): JSONObject? {
     o.put("server", u.host)
     o.put("server_port", u.port)
     o.put("uuid", u.user)
-    val flow = u.params["flow"]
-    if (!flow.isNullOrEmpty()) o.put("flow", flow)
-    if (!applyTlsAndTransport(o, u.params, u.host, false)) {
-        throw IllegalArgumentException("Unsupported VLESS security or transport parameters")
+    val flow = u.params["flow"]?.takeIf(String::isNotBlank)
+    if (flow != null) {
+        require(flow == "xtls-rprx-vision") { "Unsupported VLESS flow: $flow" }
+        require(u.params["security"]?.trim()?.lowercase() in setOf("tls", "reality")) {
+            "VLESS flow $flow requires TLS or Reality security"
+        }
+        o.put("flow", flow)
     }
+    applyTlsAndTransport(o, u.params, u.host, false)
     return o
 }
 
 private fun parseTrojan(link: String, tag: String): JSONObject? {
-    val u = splitUri(link) ?: return null
-    if (u.user.isEmpty() || u.port !in 1..65535) return null
+    val u = splitUri(link)
+        ?: throw IllegalArgumentException("Malformed Trojan link: expected trojan://password@host:port")
+    require(u.user.isNotEmpty()) { "Trojan password is missing" }
+    require(u.port in 1..65535) { "Trojan server port must be between 1 and 65535" }
+    require(u.params["security"]?.trim()?.lowercase() != "none") {
+        "Trojan requires TLS; security=none is invalid"
+    }
     val o = JSONObject()
     o.put("type", "trojan")
     o.put("tag", tag)
     o.put("server", u.host)
     o.put("server_port", u.port)
     o.put("password", u.user)
-    if (!applyTlsAndTransport(o, u.params, u.host, true)) return null
+    applyTlsAndTransport(o, u.params, u.host, true)
     return o
 }
 
 private fun parseVmess(link: String, tag: String): JSONObject? {
-    val j = JSONObject(b64(link.removePrefix("vmess://").substringBefore('#')))
+    val j = try {
+        JSONObject(b64(link.substringAfter("://").substringBefore('#')))
+    } catch (e: Exception) {
+        throw IllegalArgumentException(
+            "Malformed VMess link: expected vmess:// followed by base64-encoded JSON",
+            e
+        )
+    }
     val server = j.optString("add")
-    val port = j.optString("port").toIntOrNull() ?: return null
+    val port = j.optString("port").toIntOrNull()
+        ?: throw IllegalArgumentException("VMess server port is missing or invalid")
     val id = j.optString("id")
-    if (server.isEmpty() || id.isEmpty() || port !in 1..65535) return null
+    require(server.isNotEmpty()) { "VMess server address is missing" }
+    require(id.isNotEmpty()) { "VMess UUID is missing" }
+    require(port in 1..65535) { "VMess server port must be between 1 and 65535" }
 
     val p = HashMap<String, String>()
-    p["security"] = if (j.optString("tls") == "tls") "tls" else "none"
+    p["security"] = if (j.optString("tls").equals("tls", ignoreCase = true)) "tls" else "none"
     p["sni"] = j.optString("sni")
     p["type"] = j.optString("net")
     p["host"] = j.optString("host")
@@ -229,13 +280,15 @@ private fun parseVmess(link: String, tag: String): JSONObject? {
     o.put("uuid", id)
     o.put("security", j.optString("scy").ifEmpty { "auto" })
     o.put("alter_id", j.optString("aid").toIntOrNull() ?: 0)
-    if (!applyTlsAndTransport(o, p, server, false)) return null
+    applyTlsAndTransport(o, p, server, false)
     return o
 }
 
 private fun parseSs(link: String, tag: String): JSONObject? {
-    val body = link.removePrefix("ss://").substringBefore('#')
-    if (body.contains("plugin=")) return null
+    val body = link.substringAfter("://").substringBefore('#')
+    require(!body.contains("plugin=")) {
+        "Shadowsocks plugin parameters are unsupported"
+    }
     val main = body.substringBefore('?')
 
     val userInfo: String
@@ -248,16 +301,20 @@ private fun parseSs(link: String, tag: String): JSONObject? {
     } else {
         val d = b64(main)
         val at = d.lastIndexOf('@')
-        if (at < 0) return null
+        require(at >= 0) { "Malformed Shadowsocks link: missing server address" }
         userInfo = d.substring(0, at)
         hostPort = d.substring(at + 1)
     }
 
     val method = userInfo.substringBefore(':')
     val password = userInfo.substringAfter(':', "")
-    if (method !in SS_METHODS || password.isEmpty()) return null
-    val hp = splitHostPort(hostPort) ?: return null
-    if (hp.second !in 1..65535) return null
+    require(method in SS_METHODS) { "Unsupported Shadowsocks cipher: $method" }
+    require(password.isNotEmpty()) { "Shadowsocks password is missing" }
+    val hp = splitHostPort(hostPort)
+        ?: throw IllegalArgumentException("Malformed Shadowsocks link: expected host:port")
+    require(hp.second in 1..65535) {
+        "Shadowsocks server port must be between 1 and 65535"
+    }
 
     val o = JSONObject()
     o.put("type", "shadowsocks")
@@ -272,10 +329,10 @@ private fun parseSs(link: String, tag: String): JSONObject? {
 internal fun parseProxyLink(link: String, tag: String): JSONObject? {
     return try {
         when {
-            link.startsWith("vless://") -> parseVless(link, tag)
-            link.startsWith("vmess://") -> parseVmess(link, tag)
-            link.startsWith("trojan://") -> parseTrojan(link, tag)
-            link.startsWith("ss://") -> parseSs(link, tag)
+            link.startsWith("vless://", ignoreCase = true) -> parseVless(link, tag)
+            link.startsWith("vmess://", ignoreCase = true) -> parseVmess(link, tag)
+            link.startsWith("trojan://", ignoreCase = true) -> parseTrojan(link, tag)
+            link.startsWith("ss://", ignoreCase = true) -> parseSs(link, tag)
             else -> null
         }
     } catch (e: Exception) {
@@ -284,12 +341,14 @@ internal fun parseProxyLink(link: String, tag: String): JSONObject? {
 }
 
 internal fun parseManualProxyLink(link: String, tag: String): JSONObject {
+    require(link.isNotBlank()) { "Proxy link is empty" }
     val protocol = link.substringBefore("://").lowercase()
+    val normalizedLink = link.replaceFirst(Regex("^[a-zA-Z]+://")) { it.value.lowercase() }
     val node = when (protocol) {
-        "vless" -> parseVless(link, tag)
-        "vmess" -> parseVmess(link, tag)
-        "trojan" -> parseTrojan(link, tag)
-        "ss" -> parseSs(link, tag)
+        "vless" -> parseVless(normalizedLink, tag)
+        "vmess" -> parseVmess(normalizedLink, tag)
+        "trojan" -> parseTrojan(normalizedLink, tag)
+        "ss" -> parseSs(normalizedLink, tag)
         else -> throw IllegalArgumentException("Unsupported proxy link: $protocol")
     }
     return node ?: throw IllegalArgumentException("Invalid $protocol link or unsupported parameters")
@@ -493,7 +552,7 @@ suspend fun addManualConfig(context: Context, link: String): Result<Unit> {
             config.put("route", fixedRoute)
             config.put("outbounds", outbounds)
 
-            addTunAndDns(config)
+            addTunAndDns(config, dnsDetour = "direct")
 
             ConfigNormalizer.normalizeConfig(config)
             val text = config.toString(4)

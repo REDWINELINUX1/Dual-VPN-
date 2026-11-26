@@ -146,9 +146,12 @@ class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 finishFailedStart(operation, startId, detail)
                 return
             }
-            val text = ConfigNormalizer.normalizeConfig(
-                JSONObject(configFile.readText())
-            ).toString(4)
+            val config = JSONObject(configFile.readText())
+            val configuredOutbounds = config.optJSONArray("outbounds")
+            val manualConfig = (0 until (configuredOutbounds?.length() ?: 0))
+                .mapNotNull { configuredOutbounds?.optJSONObject(it) }
+                .any { it.optString("tag") == "manual_node" }
+            val text = ConfigNormalizer.normalizeConfig(config).toString(4)
             if (!libReady) {
                 val options = SetupOptions().apply {
                     basePath = filesDir.path
@@ -170,6 +173,11 @@ class MyVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             getSystemService(NotificationManager::class.java)
                 ?.notify(NOTIFICATION_ID, buildForegroundNotification("Connected"))
             publishStatus(STATUS_CONNECTED)
+            if (manualConfig) {
+                publishLog(
+                    "Manual VPN tunnel started. DNS uses the underlying network; proxy/server reachability has not been verified."
+                )
+            }
             toast("sing-box started")
         } catch (e: Throwable) {
             val detail = throwableMessage(e)

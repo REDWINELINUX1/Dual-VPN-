@@ -9,3 +9,8 @@ The artifact's SHA-256 is
 
 The bundled sing-box library is licensed under GPL-3.0-or-later; see
 [`app/libs/LICENSE-sing-box`](app/libs/LICENSE-sing-box).
+
+For manually entered proxy links, DNS uses the underlying network rather than
+the configured proxy. This lets DNS resolve independently when a manual proxy
+is unavailable; the app reports that proxy reachability is not verified when
+the tunnel starts.

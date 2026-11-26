@@ -3,7 +3,7 @@ package com.vpn.app
 import org.json.JSONArray
 import org.json.JSONObject
 
-fun addTunAndDns(config: JSONObject) {
+fun addTunAndDns(config: JSONObject, dnsDetour: String = "select") {
     val dnsServers = JSONArray()
         .put(
             JSONObject()
@@ -11,7 +11,7 @@ fun addTunAndDns(config: JSONObject) {
                 .put("tag", "remote")
                 .put("server", "1.1.1.1")
                 .put("server_port", 53)
-                .put("detour", "select")
+                .put("detour", dnsDetour)
         )
     config.put(
         "dns",
