@@ -1,0 +1,88 @@
+[33mcommit 37e51f4fcb6d52c5edf88254040a4d37c1035b20[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mbackup-commits[m[33m, [m[1;32mbackup-before-ai-msg[m[33m)[m
+Author: REDWINELINUX1 <mytvxvision2@gmail.com>
+Date:   Fri Nov 27 06:00:17 2026 +0000
+
+    Fix traffic loop, protect socket, and outbound routing
+
+ .../vpn/app/ConfigNormalizer.kt  | 48 [32m++++++++++[m
+ .../com/vpn/app/Configbuilder.kt | 32 [32m+++++[m[31m--[m
+ 2 files changed, 74 insertions(+), 6 deletions(-)
+
+[33mcommit 003549a75424a7f8240b331b1b9dea71410829fc[m
+Author: REDWINELINUX1 <mytvxvision2@gmail.com>
+Date:   Thu Nov 26 21:05:32 2026 +0000
+
+    Fix traffic loop, protect socket, and outbound routing
+
+ .../com/vpn/app/ConfigNormalizer.kt     | 2 [32m+[m[31m-[m
+ .../java/com/vpn/app/Configbuilder.kt   | 2 [32m+[m[31m-[m
+ .../com/vpn/app/MainDashboardScreen.kt  | 4 [32m++[m[31m--[m
+ .../java/com/vpn/app/MyVpnService.kt    | 4 [32m++[m[31m--[m
+ 4 files changed, 6 insertions(+), 6 deletions(-)
+
+[33mcommit 753ce59dce576f514224ae5b3c2e8ce454deab03[m
+Author: REDWINELINUX1 <mytvxvision2@gmail.com>
+Date:   Thu Nov 26 20:45:35 2026 +0000
+
+    Fix traffic loop, protect socket, and outbound routing
+
+ .../vpn/app/ConfigNormalizer.kt  | 20 [32m++++++[m[31m----[m
+ .../com/vpn/app/Configbuilder.kt | 15 [32m++++++[m[31m-[m
+ .../problems-report.html         |  2 [32m+[m[31m-[m
+ 3 files changed, 28 insertions(+), 9 deletions(-)
+
+[33mcommit 7cd7359fc216bdf879744a47e665918867d87493[m
+Author: REDWINELINUX1 <mytvxvision2@gmail.com>
+Date:   Thu Nov 26 20:27:35 2026 +0000
+
+    Fix traffic loop, protect socket, and outbound routing
+
+ .../com/vpn/app/Configbuilder.kt     | 7 [32m++++++[m[31m-[m
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+[33mcommit ea025458cd38e9958081866e6a7c291c8acccf14[m
+Author: REDWINELINUX1 <mytvxvision2@gmail.com>
+Date:   Thu Nov 26 20:23:04 2026 +0000
+
+    Fix traffic loop, protect socket, and outbound routing
+
+ README.md                        |   5 [32m+[m
+ .../com/vpn/app/Configbuilder.kt | 145 [32m++++++[m[31m---[m
+ .../com/vpn/app/MyVpnService.kt  |  14 [32m+[m[31m-[m
+ .../com/vpn/app/Tunconfig.kt     |   4 [32m+[m[31m-[m
+ 4 files changed, 120 insertions(+), 48 deletions(-)
+
+[33mcommit 27f65e25bed3ca0f809e646c7b5f2236f87fa254[m
+Author: REDWINELINUX1 <mytvxvision2@gmail.com>
+Date:   Thu Nov 26 19:47:06 2026 +0000
+
+    Fix traffic loop, protect socket, and outbound routing
+
+ .../com/vpn/app/Configbuilder.kt | 59 [32m++++++[m[31m----[m
+ .../app/MainDashboardScreen.kt   | 22 [32m++[m[31m--[m
+ 2 files changed, 48 insertions(+), 33 deletions(-)
+
+[33mcommit f1c4e75d6a627290b404d306c0a18c4f45afc01b[m
+Author: REDWINELINUX1 <mytvxvision2@gmail.com>
+Date:   Thu Nov 26 19:16:38 2026 +0000
+
+    Fix traffic loop, protect socket, and outbound routing
+
+ .../com/vpn/app/AppSettings.kt   |  6 [32m+[m
+ .../app/MainDashboardScreen.kt   | 66 [32m+++++++[m[31m--[m
+ .../com/vpn/app/MyVpnService.kt  | 69 [32m++++++++[m[31m--[m
+ 3 files changed, 119 insertions(+), 22 deletions(-)
+
+[33mcommit 148109527aa5514e9cdbe60667e65f4b94101c63[m
+Author: REDWINELINUX1 <mytvxvision2@gmail.com>
+Date:   Thu Nov 26 16:34:55 2026 +0000
+
+    Fix outbound routing and traffic loop
+
+ .../com/vpn/app/ConfigManager.kt | 243 [32m+++[m[31m------[m
+ .../vpn/app/ConfigNormalizer.kt  | 219 [32m+++++++[m[31m-[m
+ .../com/vpn/app/Configbuilder.kt |  16 [32m+[m[31m-[m
+ .../app/MainDashboardScreen.kt   |  27 [32m+[m[31m-[m
+ .../com/vpn/app/MyVpnService.kt  |  19 [32m+[m[31m-[m
+ .../com/vpn/app/Tunconfig.kt     |  63 [32m++[m[31m-[m
+ 6 files changed, 377 insertions(+), 210 deletions(-)
