@@ -17,6 +17,7 @@ object ConfigNormalizer {
         ensureProxyRoute(config, route)
         ensureDns(config, route)
         ensureDnsHijackRule(route)
+        ensureUdp443RejectRule(route)
         route.put("auto_detect_interface", true)
         config.put("route", route)
         prependInboundRules(config, inboundRules)
@@ -297,6 +298,53 @@ object ConfigNormalizer {
         } else if (hijackRule.optInt("port", -1) != 53) {
             hijackRule.put("port", 53)
         }
+    }
+
+    private fun ensureUdp443RejectRule(route: JSONObject) {
+        val rules = route.optJSONArray("rules") ?: JSONArray().also {
+            route.put("rules", it)
+        }
+        val retainedRules = JSONArray()
+        for (i in 0 until rules.length()) {
+            val rule = rules.optJSONObject(i)
+            if (rule == null) {
+                retainedRules.put(rules.get(i))
+                continue
+            }
+            val isUdp443Reject = rule.optString("network") == "udp" &&
+                rule.optInt("port", -1) == 443 &&
+                rule.optString("action") == "reject"
+            if (!isUdp443Reject) retainedRules.put(rule)
+        }
+
+        var insertAt = 0
+        while (insertAt < retainedRules.length()) {
+            val action = retainedRules.optJSONObject(insertAt)?.optString("action")
+            if (action !in setOf("sniff", "hijack-dns")) break
+            insertAt++
+        }
+
+        val normalizedRules = JSONArray()
+        for (i in 0 until retainedRules.length()) {
+            if (i == insertAt) {
+                normalizedRules.put(
+                    JSONObject()
+                        .put("network", "udp")
+                        .put("port", 443)
+                        .put("action", "reject")
+                )
+            }
+            normalizedRules.put(retainedRules.get(i))
+        }
+        if (insertAt == retainedRules.length()) {
+            normalizedRules.put(
+                JSONObject()
+                    .put("network", "udp")
+                    .put("port", 443)
+                    .put("action", "reject")
+            )
+        }
+        route.put("rules", normalizedRules)
     }
 
     private fun setUdpServer(server: JSONObject, address: String) {

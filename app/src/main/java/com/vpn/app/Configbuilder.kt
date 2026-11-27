@@ -18,7 +18,10 @@ import java.net.URLDecoder
 
 private val CHANNELS = listOf("BugFreeNet", "Eag1e_YT", "persianvpnhub", "ConfigWireguard")
 private const val MAX_NODES = 40
-private val LINK_REGEX = Regex("(vless|vmess|trojan|ss)://[^\\s<>\"']+")
+private val LINK_REGEX = Regex(
+    "(vless|vmess|trojan|ss)://[^\\s<>\"']+?(?=(?:vless|vmess|trojan|ss)://|\\s|$|[<>\"'])",
+    RegexOption.IGNORE_CASE
+)
 
 private val SS_METHODS = setOf(
     "aes-128-gcm", "aes-192-gcm", "aes-256-gcm",
@@ -342,13 +345,30 @@ internal fun parseProxyLink(link: String, tag: String): JSONObject? {
 
 internal fun parseManualProxyLink(link: String, tag: String): JSONObject {
     require(link.isNotBlank()) { "Proxy link is empty" }
+    val candidates = LINK_REGEX.findAll(link)
+        .map { it.value.trimEnd(',', '.', ';', ')', ']', '}') }
+        .filter(String::isNotBlank)
+        .toList()
+    require(candidates.isNotEmpty()) { "No supported proxy link was found" }
+
+    var lastError: IllegalArgumentException? = null
+    for (candidate in candidates) {
+        try {
+            return parseManualProxyCandidate(candidate, tag)
+        } catch (e: IllegalArgumentException) {
+            lastError = e
+        } catch (e: Exception) {
+            lastError = IllegalArgumentException("Invalid proxy link", e)
+        }
+    }
+    throw lastError ?: IllegalArgumentException("No valid proxy link was found")
+}
+
+private fun parseManualProxyCandidate(link: String, tag: String): JSONObject {
     val protocol = link.substringBefore("://").lowercase()
     val schemeSeparator = link.indexOf("://")
-    val normalizedLink = if (schemeSeparator >= 0) {
+    val normalizedLink =
         link.substring(0, schemeSeparator).lowercase() + link.substring(schemeSeparator)
-    } else {
-        link
-    }
     val node = when (protocol) {
         "vless" -> parseVless(normalizedLink, tag)
         "vmess" -> parseVmess(normalizedLink, tag)
@@ -570,7 +590,7 @@ suspend fun addManualConfig(context: Context, link: String): Result<Unit> {
             config.put("route", fixedRoute)
             config.put("outbounds", outbounds)
 
-            addTunAndDns(config, dnsDetour = "direct")
+            addTunAndDns(config, dnsDetour = "manual_node")
 
             ConfigNormalizer.normalizeConfig(config)
             val text = config.toString(4)
